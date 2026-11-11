@@ -1,9 +1,10 @@
-# Время подлёта
+# Час підльоту
 
 Фронтовое приложение (Vue 3 + Vuetify 4 + Pinia): выбираешь откуда и куда — получаешь время полёта по прямой при максимальной скорости (Бандероль, Герань-2, Герань-3, Герань-5 или своя скорость).
 
-- **Населённые пункты** — локальный справочник `public/places-ua.json` (~32 тыс. пунктов Украины с русскими названиями), собран из [GeoNames](https://www.geonames.org) (CC BY 4.0). Пересобрать: скачать `UA.zip` и `alternatenames/UA.zip` с https://download.geonames.org/export/dump/, распаковать и запустить `python3 scripts/build_places.py <UA.txt> <alternatenames UA.txt> public/places-ua.json`.
+- **Населённые пункты** — локальный справочник `public/places-ua.json` (~32 тыс. пунктов Украины с украинскими и русскими названиями), собран из [GeoNames](https://www.geonames.org) (CC BY 4.0). Пересобрать: скачать `UA.zip` и `alternatenames/UA.zip` с https://download.geonames.org/export/dump/, распаковать и запустить `python3 scripts/build_places.py <UA.txt> <alternatenames UA.txt> public/places-ua.json`.
 - **Время** — `src/utils/flight.js`: расстояние по дуге большого круга ÷ макс. скорость. Пресеты скоростей там же.
+- **Языки** — украинский (по умолчанию) и русский, переключатель в шапке; тексты в `src/i18n.js`.
 
 ## Запуск
 
