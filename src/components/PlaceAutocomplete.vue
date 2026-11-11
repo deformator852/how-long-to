@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
-import { loadPlaces, placeSubtitle, searchPlaces } from '../services/places'
+import { t } from '../i18n'
+import { loadPlaces, placeName, placeSubtitle, searchPlaces } from '../services/places'
 
 const model = defineModel({ type: Object, default: null })
 defineProps({ label: { type: String, required: true }, icon: { type: String, default: 'mdi-map-marker' } })
@@ -8,14 +9,14 @@ defineProps({ label: { type: String, required: true }, icon: { type: String, def
 const search = ref('')
 const items = ref([])
 const loading = ref(false)
-const error = ref('')
+const failed = ref(false)
 
 onMounted(async () => {
   loading.value = true
   try {
     await loadPlaces()
   } catch {
-    error.value = 'Не удалось загрузить справочник населённых пунктов. Обновите страницу.'
+    failed.value = true
   } finally {
     loading.value = false
   }
@@ -25,15 +26,15 @@ let timer = null
 watch(search, (q) => {
   clearTimeout(timer)
   // Vuetify пишет в search название выбранного пункта — повторно не ищем.
-  if (!q || q === model.value?.name) return
+  if (!q || q === placeName(model.value)) return
   timer = setTimeout(async () => {
     try {
       const found = await searchPlaces(q)
       // Выбранный пункт должен оставаться в списке, иначе поле очистится.
       items.value = model.value && !found.some((p) => p.id === model.value.id) ? [model.value, ...found] : found
-      error.value = ''
+      failed.value = false
     } catch {
-      error.value = 'Не удалось загрузить справочник населённых пунктов. Обновите страницу.'
+      failed.value = true
     }
   }, 120)
 })
@@ -51,15 +52,15 @@ watch(model, (v) => {
     :label="label"
     :prepend-inner-icon="icon"
     :loading="loading"
-    :error-messages="error"
-    item-title="name"
+    :error-messages="failed ? t('loadError') : ''"
+    :item-title="placeName"
     item-value="id"
     return-object
     no-filter
     clearable
     hide-no-data
     variant="outlined"
-    placeholder="Начните вводить название…"
+    :placeholder="t('placeholder')"
   >
     <template #item="{ props: itemProps, item }">
       <v-list-item v-bind="itemProps" :subtitle="placeSubtitle(item)" />

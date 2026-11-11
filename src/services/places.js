@@ -1,6 +1,7 @@
 // Поиск населённых пунктов Украины по локальному справочнику public/places-ua.json
 // (собирается скриптом scripts/build_places.py из GeoNames, CC BY 4.0).
-// Названия на русском; искать можно и по-русски, и по-украински.
+// Искать можно на украинском и на русском; показывается название на языке интерфейса.
+import { lang, numberLocale, t } from '../i18n'
 
 let indexPromise = null
 
@@ -14,19 +15,24 @@ export function loadPlaces() {
       return res.json()
     })
     .then(({ regions, places }) => {
-      const list = places.map(([ru, uk, region, lat, lon, population, near, nearKm], id) => ({
+      const list = places.map(([ru, uk, region, lat, lon, population, nearIdx, nearKm], id) => ({
         id,
-        name: ru,
-        nameUk: uk,
-        region: regions[region] ?? '',
+        nameRu: ru,
+        nameUk: uk || ru, // пустое uk = совпадает с русским или нет в источнике
+        regionRu: regions[region]?.[0] ?? '',
+        regionUk: regions[region]?.[1] ?? '',
         lat,
         lon,
         population,
-        nearIdx: near,
+        nearIdx,
         nearKm,
         keys: [normalize(ru), ...(uk ? [normalize(uk)] : [])],
       }))
-      for (const p of list) p.nearName = p.nearIdx >= 0 ? list[p.nearIdx].name : ''
+      for (const p of list) {
+        const near = p.nearIdx >= 0 ? list[p.nearIdx] : null
+        p.nearRu = near?.nameRu ?? ''
+        p.nearUk = near?.nameUk ?? ''
+      }
       return list
     })
     .catch((e) => {
@@ -57,10 +63,15 @@ export async function searchPlaces(query, limit = 10) {
   return buckets.flat().slice(0, limit)
 }
 
-/** Подпись под названием: «Донецкая обл. · 13 км от Славянска». */
+const uk = () => lang.value === 'uk'
+
+export const placeName = (p) => (p ? (uk() ? p.nameUk : p.nameRu) : '')
+
+/** Подпись под названием: «Донецька обл. · 13 км від м. Слов’янськ». */
 export function placeSubtitle(p) {
-  const parts = [p.region]
-  if (p.nearName && p.nearKm > 0) parts.push(`${p.nearKm} км от г. ${p.nearName}`)
-  else if (p.population >= 10000) parts.push(`${p.population.toLocaleString('ru-RU')} жит.`)
+  const parts = [uk() ? p.regionUk : p.regionRu]
+  const near = uk() ? p.nearUk : p.nearRu
+  if (near && p.nearKm > 0) parts.push(t('kmFrom', { km: p.nearKm, city: near }))
+  else if (p.population >= 10000) parts.push(t('residents', { n: p.population.toLocaleString(numberLocale()) }))
   return parts.filter(Boolean).join(' · ')
 }

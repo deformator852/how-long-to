@@ -1,10 +1,10 @@
 import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
-import { ru } from 'vuetify/locale'
+import { ru, uk } from 'vuetify/locale'
 
 export default createVuetify({
-  locale: { locale: 'ru', messages: { ru } },
+  locale: { locale: 'uk', fallback: 'ru', messages: { uk, ru } },
   theme: {
     defaultTheme: 'system',
     themes: {

@@ -10,7 +10,8 @@ function loadHistory() {
   try {
     const h = JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? []
     return h
-      .filter((e) => typeof e.from?.id === 'number') // записи до перехода на локальный справочник
+      // Записи старых форматов (до двуязычного справочника) отбрасываем.
+      .filter((e) => e.from?.nameUk && e.to?.nameUk)
       .map((e) => ({ ...e, vehicles: (e.vehicles ?? [e.vehicle]).filter((v) => VEHICLES[v]) }))
       .filter((e) => e.vehicles.length)
   } catch {
