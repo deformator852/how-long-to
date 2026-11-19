@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { useFlightStore } from '../stores/flight'
 import { flightMinutes, formatDuration } from '../utils/flight'
 import { placeName } from '../services/places'
+import PointBadge from './PointBadge.vue'
 import { NUMBER_LOCALE, t } from '../i18n'
 
 const { results, distanceKm, points, legsKm } = storeToRefs(useFlightStore())
@@ -60,7 +61,7 @@ const beyondRange = (r, i) => r.rangeKm != null && cumKm.value[i] > r.rangeKm
         </thead>
         <tbody>
           <tr v-for="(p, i) in points" :key="i">
-            <td class="font-weight-bold">{{ i + 1 }}</td>
+            <td><PointBadge :index="i" /></td>
             <td>{{ placeName(p) }}</td>
             <td class="text-end text-no-wrap">
               {{ km(cumKm[i]) }}

@@ -1,6 +1,7 @@
 <script setup>
 import { storeToRefs } from 'pinia'
 import PlaceAutocomplete from './components/PlaceAutocomplete.vue'
+import PointBadge from './components/PointBadge.vue'
 import EstimateResult from './components/EstimateResult.vue'
 import { computed, defineAsyncComponent, nextTick, ref } from 'vue'
 import { useDisplay } from 'vuetify'
@@ -74,7 +75,7 @@ function routeLabel(points) {
               <div v-if="mode === 'list'" class="stops">
                 <div v-for="(s, i) in stops" :key="s.key" class="stop-row">
                   <div class="stop-rail">
-                    <span class="stop-num" :class="{ 'stop-num--start': i === 0 }">{{ i + 1 }}</span>
+                    <PointBadge :index="i" :size="26" />
                   </div>
                   <PlaceAutocomplete
                     v-model="s.place"
@@ -107,7 +108,7 @@ function routeLabel(points) {
                     :close-label="t('removePoint')"
                     @click:close="store.removeStop(s.key)"
                   >
-                    <span class="font-weight-bold mr-1">{{ i + 1 }}</span>{{ placeName(s.place) }}
+                    <PointBadge :index="i" :size="18" class="mr-1 ml-n1" />{{ placeName(s.place) }}
                   </v-chip>
                 </div>
               </template>
@@ -262,23 +263,5 @@ function routeLabel(points) {
   left: 12px;
   height: calc(100% - 34px + var(--stop-gap));
   border-left: 2px dotted rgba(var(--v-theme-on-surface), 0.3);
-}
-
-.stop-num {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.stop-num--start {
-  background: rgb(var(--v-theme-secondary));
-  color: rgb(var(--v-theme-on-secondary));
 }
 </style>

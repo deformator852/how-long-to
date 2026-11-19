@@ -13,6 +13,7 @@ import { useFlightStore } from '../stores/flight'
 import { placeName } from '../services/places'
 import { haversineKm } from '../utils/geo'
 import { t } from '../i18n'
+import { legColorName, pinStyle } from '../utils/routeColors'
 
 maplibregl.setWorkerUrl(workerUrl)
 
@@ -66,10 +67,10 @@ function bearing(a, b) {
   return (Math.atan2(y, x) / r + 360) % 360
 }
 
-/** Точки вдоль цепочки примерно через 1/200 её длины: { lon, lat, d } (d — км от старта). */
+/** Точки вдоль цепочки примерно через 1/200 её длины: { lon, lat, d, leg } (d — км от старта, leg — № отрезка). */
 function samplePath(pts, totalKm) {
   const step = totalKm / 200
-  const out = [{ lon: pts[0].lon, lat: pts[0].lat, d: 0 }]
+  const out = [{ lon: pts[0].lon, lat: pts[0].lat, d: 0, leg: 0 }]
   let start = 0
   for (let i = 1; i < pts.length; i++) {
     const [a, b] = [pts[i - 1], pts[i]]
@@ -77,7 +78,7 @@ function samplePath(pts, totalKm) {
     const n = Math.max(1, Math.ceil(leg / step))
     for (let k = 1; k <= n; k++) {
       const f = k / n
-      out.push({ lon: a.lon + (b.lon - a.lon) * f, lat: a.lat + (b.lat - a.lat) * f, d: start + leg * f })
+      out.push({ lon: a.lon + (b.lon - a.lon) * f, lat: a.lat + (b.lat - a.lat) * f, d: start + leg * f, leg: i - 1 })
     }
     start += leg
   }
@@ -98,6 +99,7 @@ const polygon = (ring, props) => ({ type: 'Feature', properties: props, geometry
  * «ribbon» висит в воздухе, «curtain» — полупрозрачная стенка от земли до ленты.
  */
 function routeData(pts) {
+  const legColor = (leg) => theme.current.value.colors[legColorName(leg)] // у каждого отрезка свой цвет
   let totalKm = 0
   for (let i = 1; i < pts.length; i++) totalKm += haversineKm(pts[i - 1], pts[i])
   const cruise = Math.max(8000, totalKm * 100) // м: заметно на экране при любом масштабе маршрута
@@ -119,13 +121,18 @@ function routeData(pts) {
       const ring = [[a.lon + ox, a.lat + oy], [b.lon + ox, b.lat + oy], [b.lon - ox, b.lat - oy], [a.lon - ox, a.lat - oy], [a.lon + ox, a.lat + oy]]
       const top = altitude((a.d + b.d) / 2, totalKm, cruise)
       const base = Math.max(0, top - thick)
-      ribbon.push(polygon(ring, { base, top }))
-      curtain.push(polygon(ring, { base: 0, top: base }))
+      const color = legColor(b.leg)
+      ribbon.push(polygon(ring, { base, top, color }))
+      curtain.push(polygon(ring, { base: 0, top: base, color }))
     }
   }
-  const track = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lon, p.lat]) } }
+  const track = pts.slice(1).map((b, i) => ({
+    type: 'Feature',
+    properties: { color: legColor(i) },
+    geometry: { type: 'LineString', coordinates: [[pts[i].lon, pts[i].lat], [b.lon, b.lat]] },
+  }))
   const fc = (features) => ({ type: 'FeatureCollection', features })
-  return { ribbon: fc(ribbon), curtain: fc(curtain), track: fc(pts.length >= 2 ? [track] : []) }
+  return { ribbon: fc(ribbon), curtain: fc(curtain), track: fc(track) }
 }
 
 /** Подписи базовой карты — по-украински, где в OpenStreetMap есть name:uk. */
@@ -139,7 +146,6 @@ function localizeLabels() {
 
 /** Рельеф, отмывка и слои маршрута. Вызывается после каждой загрузки стиля (смена темы перезагружает стиль). */
 function setupStyle() {
-  const color = theme.current.value.colors.primary
   localizeLabels()
   map.addSource('dem', DEM)
   map.addSource('dem-shade', DEM) // отдельный источник для отмывки — так советует MapLibre
@@ -155,14 +161,14 @@ function setupStyle() {
     id: 'route-track',
     type: 'line',
     source: 'route-track',
-    paint: { 'line-color': color, 'line-width': 2, 'line-dasharray': [2, 2] },
+    paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [2, 2] },
   })
   map.addLayer({
     id: 'route-curtain',
     type: 'fill-extrusion',
     source: 'route-curtain',
     paint: {
-      'fill-extrusion-color': color,
+      'fill-extrusion-color': ['get', 'color'],
       'fill-extrusion-base': ['get', 'base'],
       'fill-extrusion-height': ['get', 'top'],
       'fill-extrusion-opacity': 0.22,
@@ -173,7 +179,7 @@ function setupStyle() {
     type: 'fill-extrusion',
     source: 'route-ribbon',
     paint: {
-      'fill-extrusion-color': color,
+      'fill-extrusion-color': ['get', 'color'],
       'fill-extrusion-base': ['get', 'base'],
       'fill-extrusion-height': ['get', 'top'],
       'fill-extrusion-opacity': 0.95,
@@ -191,7 +197,8 @@ function drawMarkers() {
   for (const m of markers) m.remove()
   markers = points.value.map((p, i) => {
     const pin = document.createElement('div')
-    pin.className = i === 0 ? 'route3d-pin route3d-pin--start' : 'route3d-pin'
+    pin.className = 'route3d-pin'
+    Object.assign(pin.style, pinStyle(i)) // цвет точки = цвет отрезка, который в неё ведёт
     pin.textContent = String(i + 1)
     const label = document.createElement('span')
     label.className = 'route3d-pin__label'
@@ -353,15 +360,8 @@ onBeforeUnmount(() => {
   height: 26px;
   border: 2px solid rgb(var(--v-theme-surface));
   border-radius: 50%;
-  background: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
   font: 600 13px/1 system-ui, sans-serif;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
-}
-
-.route3d-pin--start {
-  background: rgb(var(--v-theme-secondary));
-  color: rgb(var(--v-theme-on-secondary));
 }
 
 .route3d-pin__label {

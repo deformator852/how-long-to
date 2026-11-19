@@ -5,16 +5,19 @@ import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useTheme } from 'vuetify'
 import { useFlightStore } from '../stores/flight'
 import { loadPlaces, mapPoint, placeName, placeSubtitle } from '../services/places'
 import { haversineKm } from '../utils/geo'
 import { NUMBER_LOCALE, t } from '../i18n'
+import { legColorName, pinStyle } from '../utils/routeColors'
 
 const UKRAINE_BOUNDS = [[44.3, 22.1], [52.4, 40.3]]
 const PIN_SIZE = 26 // px, диаметр кружка с номером точки (см. .route-pin)
 
 const store = useFlightStore()
 const { filledStops } = storeToRefs(store)
+const theme = useTheme()
 const el = ref(null)
 
 let map = null
@@ -35,12 +38,12 @@ function fit() {
  * Наконечник стрелки у точки назначения, повёрнутый по направлению отрезка.
  * Линия на карте — прямая в проекции Меркатора, поэтому угол на экране не зависит от масштаба.
  */
-function arrowIcon(a, b) {
+function arrowIcon(a, b, color) {
   const d = map.project(b, 0).subtract(map.project(a, 0))
   const deg = (Math.atan2(d.y, d.x) * 180) / Math.PI
   return L.divIcon({
     className: 'route-arrow',
-    html: `<div style="transform: rotate(${deg}deg)"><svg width="16" height="14" viewBox="0 0 16 14"><path d="M0 0 16 7 0 14 4 7z"/></svg></div>`,
+    html: `<div style="transform: rotate(${deg}deg)"><svg width="16" height="14" viewBox="0 0 16 14" style="fill: ${color}"><path d="M0 0 16 7 0 14 4 7z"/></svg></div>`,
     iconSize: [0, 0],
   })
 }
@@ -51,15 +54,16 @@ function drawLegs(ll) {
     const [a, b] = [ll[i - 1], ll[i]]
     if (a.equals(b)) continue
     const km = Math.round(haversineKm({ lat: a.lat, lon: a.lng }, { lat: b.lat, lon: b.lng }))
+    const color = theme.current.value.colors[legColorName(i - 1)] // у каждого отрезка свой цвет
     L.polyline([a, b], { className: 'route-leg-casing', interactive: false }).addTo(legsLayer)
-    L.polyline([a, b], { className: 'route-leg', interactive: false })
+    L.polyline([a, b], { className: 'route-leg', color, interactive: false })
       .bindTooltip(`${km.toLocaleString(NUMBER_LOCALE)} ${t('km')}`, {
         permanent: true,
         direction: 'center',
         className: 'route-leg-label',
       })
       .addTo(legsLayer)
-    L.marker(b, { icon: arrowIcon(a, b), interactive: false, keyboard: false }).addTo(legsLayer)
+    L.marker(b, { icon: arrowIcon(a, b, color), interactive: false, keyboard: false }).addTo(legsLayer)
   }
 }
 
@@ -89,7 +93,7 @@ function drawPins() {
   filledStops.value.forEach((stop, i) => {
     const pin = L.marker([stop.place.lat, stop.place.lon], {
       icon: L.divIcon({
-        className: i === 0 ? 'route-pin route-pin--start' : 'route-pin',
+        className: 'route-pin',
         html: String(i + 1),
         iconSize: [PIN_SIZE, PIN_SIZE],
         popupAnchor: [0, -PIN_SIZE / 2],
@@ -111,6 +115,7 @@ function drawPins() {
       store.setPlace(stop.key, await mapPoint(lat, lng))
     })
     pin.addTo(pinsLayer)
+    Object.assign(pin.getElement().style, pinStyle(i)) // цвет точки = цвет отрезка, который в неё ведёт
   })
 }
 
@@ -150,6 +155,7 @@ onMounted(() => {
 })
 
 watch(filledStops, render)
+watch(() => theme.current.value.dark, render) // цвета линий берутся из темы
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
@@ -190,7 +196,6 @@ defineExpose({ fit })
 }
 
 .route-map .route-leg {
-  stroke: rgb(var(--v-theme-primary));
   stroke-width: 3px;
   stroke-opacity: 1;
 }
@@ -211,7 +216,6 @@ defineExpose({ fit })
   position: absolute;
   left: -29px;
   top: -7px;
-  fill: rgb(var(--v-theme-primary));
   stroke: rgb(var(--v-theme-surface));
   stroke-width: 1.5px;
   paint-order: stroke;
@@ -225,16 +229,9 @@ defineExpose({ fit })
   box-sizing: border-box;
   border: 2px solid rgb(var(--v-theme-surface));
   border-radius: 50%;
-  background: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
   font: 600 13px/1 system-ui, sans-serif;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
   cursor: grab;
-}
-
-.route-map .route-pin--start {
-  background: rgb(var(--v-theme-secondary));
-  color: rgb(var(--v-theme-on-secondary));
 }
 
 .route-map .route-leg-label {
