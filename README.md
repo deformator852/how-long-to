@@ -20,8 +20,12 @@ npm run dev
 
 ## Деплой на GitHub Pages
 
-Workflow `.github/workflows/deploy.yml` собирает и выкладывает `dist` при пуше в `main`.
-В настройках репозитория: **Settings → Pages → Source: GitHub Actions**.
+```sh
+npm run deploy
+```
+
+Собирает проект и публикует `dist/` в ветку `gh-pages` (скрипт `scripts/deploy.sh`; ветка каждый раз перезаписывается одним коммитом — в ней только сайт). Сайт: `https://<user>.github.io/<repo>/`, обновляется через 1–2 минуты после команды.
+Один раз в настройках репозитория: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / (root)**.
 `base: './'` в `vite.config.js` — работает под любым именем репозитория.
 
 ## PWA
