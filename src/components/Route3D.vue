@@ -16,6 +16,10 @@ import { t } from '../i18n'
 
 maplibregl.setWorkerUrl(workerUrl)
 
+// side — карта в отдельной колонке слева на широком экране: во всю высоту окна, видна и до выбора маршрута,
+// колесо мыши масштабирует карту (страница прокручивается в соседней колонке).
+const props = defineProps({ side: { type: Boolean, default: false } })
+
 const STYLES = {
   light: 'https://tiles.openfreemap.org/styles/liberty',
   dark: 'https://tiles.openfreemap.org/styles/dark',
@@ -29,6 +33,7 @@ const DEM = {
   attribution: '<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Mapzen Terrain</a>',
 }
 const PITCH = 60
+const UKRAINE_BOUNDS = [[22.1, 44.3], [40.3, 52.4]]
 const MAP_LOCALE = {
   'NavigationControl.ZoomIn': 'Наблизити',
   'NavigationControl.ZoomOut': 'Віддалити',
@@ -120,7 +125,7 @@ function routeData(pts) {
   }
   const track = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lon, p.lat]) } }
   const fc = (features) => ({ type: 'FeatureCollection', features })
-  return { ribbon: fc(ribbon), curtain: fc(curtain), track: fc([track]) }
+  return { ribbon: fc(ribbon), curtain: fc(curtain), track: fc(pts.length >= 2 ? [track] : []) }
 }
 
 /** Подписи базовой карты — по-украински, где в OpenStreetMap есть name:uk. */
@@ -202,6 +207,16 @@ function drawMarkers() {
  */
 function fit(duration = 0) {
   const pts = points.value
+  if (pts.length === 1) {
+    map.easeTo({ center: [pts[0].lon, pts[0].lat], zoom: 7, bearing: 0, pitch: PITCH, duration })
+    return
+  }
+  if (!pts.length) {
+    const cam = map.cameraForBounds(UKRAINE_BOUNDS, { padding: 20 })
+    // при наклоне дальний край кадра уходит далеко за Украину — немного приближаем
+    if (cam) map.easeTo({ ...cam, zoom: cam.zoom + 0.2, bearing: 0, pitch: PITCH, duration })
+    return
+  }
   const bounds = new maplibregl.LngLatBounds()
   for (const p of pts) bounds.extend([p.lon, p.lat])
   const camBearing = bearing(pts[0], pts.at(-1)) - 70
@@ -224,7 +239,7 @@ onMounted(() => {
       zoom: 5,
       pitch: PITCH,
       maxPitch: 80,
-      cooperativeGestures: true, // карта внутри прокручиваемой страницы — не перехватываем прокрутку
+      cooperativeGestures: !props.side, // карта внутри прокручиваемой страницы — не перехватываем прокрутку
       locale: MAP_LOCALE,
     })
   } catch {
@@ -251,7 +266,7 @@ onMounted(() => {
 watch(
   () => points.value.map((p) => p.id).join('|'),
   () => {
-    if (!map || points.value.length < 2) return
+    if (!map) return
     updateRoute()
     drawMarkers()
     fit(800)
@@ -274,7 +289,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <v-card class="mt-6">
+  <v-card :class="{ 'route3d-card--side': side }">
     <v-card-item>
       <v-card-title class="text-title-medium">{{ t('route3d') }}</v-card-title>
       <v-card-subtitle class="route3d-hint">{{ t('route3dHint') }}</v-card-subtitle>
@@ -294,6 +309,22 @@ onBeforeUnmount(() => {
 
 .route3d-wrap {
   position: relative;
+}
+
+.route3d-card--side {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.route3d-card--side .route3d-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+.route3d-card--side .route3d {
+  height: 100%;
+  min-height: 0;
 }
 
 .route3d {

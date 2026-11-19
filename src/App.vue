@@ -2,7 +2,8 @@
 import { storeToRefs } from 'pinia'
 import PlaceAutocomplete from './components/PlaceAutocomplete.vue'
 import EstimateResult from './components/EstimateResult.vue'
-import { defineAsyncComponent, nextTick, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useFlightStore } from './stores/flight'
 import { VEHICLES } from './utils/flight'
 import { t } from './i18n'
@@ -23,6 +24,9 @@ const store = useFlightStore()
 const { stops, filledStops, vehicles, customSpeedKmh, history, results } = storeToRefs(store)
 
 const mode = ref('list') // 'list' — поля с поиском пунктов, 'map' — точки кликами по карте
+// На широком экране в режиме «Список» 3D-карта стоит слева, форма и результаты — справа.
+const { lgAndUp } = useDisplay()
+const sideMap = computed(() => mode.value === 'list' && lgAndUp.value)
 const routeMap = ref(null)
 const autofocusKey = ref(null)
 
@@ -54,139 +58,144 @@ function routeLabel(points) {
     </v-app-bar>
 
     <v-main>
-      <v-container class="py-8" style="max-width: 760px">
-        <v-card class="mb-6">
-          <v-tabs v-model="mode" grow color="primary">
-            <v-tab value="list" prepend-icon="mdi-format-list-numbered">{{ t('modeList') }}</v-tab>
-            <v-tab value="map" prepend-icon="mdi-map-marker-path">{{ t('modeMap') }}</v-tab>
-          </v-tabs>
-          <v-divider />
+      <v-container class="py-8" :class="{ 'layout-side': sideMap }" :style="{ maxWidth: sideMap ? '1600px' : '760px' }">
+        <aside v-if="sideMap" class="layout-side__map">
+          <Route3D side />
+        </aside>
+        <div class="layout-side__main">
+          <v-card class="mb-6">
+            <v-tabs v-model="mode" grow color="primary">
+              <v-tab value="list" prepend-icon="mdi-format-list-numbered">{{ t('modeList') }}</v-tab>
+              <v-tab value="map" prepend-icon="mdi-map-marker-path">{{ t('modeMap') }}</v-tab>
+            </v-tabs>
+            <v-divider />
 
-          <div class="pa-4">
-            <div v-if="mode === 'list'" class="stops">
-              <div v-for="(s, i) in stops" :key="s.key" class="stop-row">
-                <div class="stop-rail">
-                  <span class="stop-num" :class="{ 'stop-num--start': i === 0 }">{{ i + 1 }}</span>
+            <div class="pa-4">
+              <div v-if="mode === 'list'" class="stops">
+                <div v-for="(s, i) in stops" :key="s.key" class="stop-row">
+                  <div class="stop-rail">
+                    <span class="stop-num" :class="{ 'stop-num--start': i === 0 }">{{ i + 1 }}</span>
+                  </div>
+                  <PlaceAutocomplete
+                    v-model="s.place"
+                    :label="stopLabel(i)"
+                    :autofocus="s.key === autofocusKey"
+                    class="flex-grow-1"
+                  />
+                  <v-btn
+                    v-if="stops.length > 2"
+                    icon="mdi-close"
+                    variant="text"
+                    size="small"
+                    class="align-self-center"
+                    :title="t('removePoint')"
+                    :aria-label="t('removePoint')"
+                    @click="store.removeStop(s.key)"
+                  />
                 </div>
-                <PlaceAutocomplete
-                  v-model="s.place"
-                  :label="stopLabel(i)"
-                  :autofocus="s.key === autofocusKey"
-                  class="flex-grow-1"
-                />
+              </div>
+
+              <template v-else>
+                <div class="text-body-small text-medium-emphasis mb-2">{{ t('mapHint') }}</div>
+                <RouteMap ref="routeMap" />
+                <div v-if="filledStops.length" class="d-flex flex-wrap ga-2 mt-3">
+                  <v-chip
+                    v-for="(s, i) in filledStops"
+                    :key="s.key"
+                    size="small"
+                    closable
+                    :close-label="t('removePoint')"
+                    @click:close="store.removeStop(s.key)"
+                  >
+                    <span class="font-weight-bold mr-1">{{ i + 1 }}</span>{{ placeName(s.place) }}
+                  </v-chip>
+                </div>
+              </template>
+
+              <div class="d-flex flex-wrap align-center ga-2 mt-3">
+                <v-btn v-if="mode === 'list'" prepend-icon="mdi-plus" variant="tonal" @click="addStop">
+                  {{ t('addPoint') }}
+                </v-btn>
                 <v-btn
-                  v-if="stops.length > 2"
-                  icon="mdi-close"
-                  variant="text"
-                  size="small"
-                  class="align-self-center"
-                  :title="t('removePoint')"
-                  :aria-label="t('removePoint')"
-                  @click="store.removeStop(s.key)"
-                />
-              </div>
-            </div>
-
-            <template v-else>
-              <div class="text-body-small text-medium-emphasis mb-2">{{ t('mapHint') }}</div>
-              <RouteMap ref="routeMap" />
-              <div v-if="filledStops.length" class="d-flex flex-wrap ga-2 mt-3">
-                <v-chip
-                  v-for="(s, i) in filledStops"
-                  :key="s.key"
-                  size="small"
-                  closable
-                  :close-label="t('removePoint')"
-                  @click:close="store.removeStop(s.key)"
+                  v-else
+                  prepend-icon="mdi-undo"
+                  variant="tonal"
+                  :disabled="!filledStops.length"
+                  :title="t('undoHint')"
+                  @click="store.removeLastPoint"
                 >
-                  <span class="font-weight-bold mr-1">{{ i + 1 }}</span>{{ placeName(s.place) }}
-                </v-chip>
+                  {{ t('undo') }}
+                </v-btn>
+                <v-spacer />
+                <v-btn prepend-icon="mdi-swap-vertical" variant="text" :title="t('reverseHint')" @click="store.reverse">
+                  {{ t('reverse') }}
+                </v-btn>
+                <v-btn
+                  prepend-icon="mdi-delete-outline"
+                  variant="text"
+                  :disabled="!filledStops.length && stops.length <= 2"
+                  @click="store.clear"
+                >
+                  {{ t('clear') }}
+                </v-btn>
               </div>
-            </template>
 
-            <div class="d-flex flex-wrap align-center ga-2 mt-3">
-              <v-btn v-if="mode === 'list'" prepend-icon="mdi-plus" variant="tonal" @click="addStop">
-                {{ t('addPoint') }}
-              </v-btn>
-              <v-btn
-                v-else
-                prepend-icon="mdi-undo"
-                variant="tonal"
-                :disabled="!filledStops.length"
-                :title="t('undoHint')"
-                @click="store.removeLastPoint"
-              >
-                {{ t('undo') }}
-              </v-btn>
-              <v-spacer />
-              <v-btn prepend-icon="mdi-swap-vertical" variant="text" :title="t('reverseHint')" @click="store.reverse">
-                {{ t('reverse') }}
-              </v-btn>
-              <v-btn
-                prepend-icon="mdi-delete-outline"
-                variant="text"
-                :disabled="!filledStops.length && stops.length <= 2"
-                @click="store.clear"
-              >
-                {{ t('clear') }}
-              </v-btn>
+              <v-divider class="mt-4 mb-2" />
+
+              <v-chip-group v-model="vehicles" multiple mandatory selected-class="text-primary" column>
+                <v-chip v-for="(v, key) in VEHICLES" :key="key" :value="key" :prepend-icon="v.icon" variant="outlined" filter>
+                  {{ t(`${key}.title`) }}
+                </v-chip>
+              </v-chip-group>
+              <div class="text-body-small text-medium-emphasis mt-1">{{ t('multiHint') }}</div>
+              <ul class="text-body-small text-medium-emphasis mt-1 pl-4">
+                <li v-for="key in vehicles" :key="key">{{ t(`${key}.title`) }}: {{ t(`${key}.note`) }}</li>
+              </ul>
+
+              <v-text-field
+                v-if="vehicles.includes('custom')"
+                v-model.number="customSpeedKmh"
+                type="number"
+                min="1"
+                :label="t('speed')"
+                :suffix="t('kmh')"
+                prepend-inner-icon="mdi-speedometer"
+                variant="outlined"
+                class="mt-4"
+                hide-details
+              />
             </div>
+          </v-card>
 
-            <v-divider class="mt-4 mb-2" />
+          <EstimateResult />
 
-            <v-chip-group v-model="vehicles" multiple mandatory selected-class="text-primary" column>
-              <v-chip v-for="(v, key) in VEHICLES" :key="key" :value="key" :prepend-icon="v.icon" variant="outlined" filter>
-                {{ t(`${key}.title`) }}
+          <Route3D v-if="!sideMap && mode === 'list' && filledStops.length >= 2" class="mt-6" />
+
+          <v-alert v-if="!results.length" type="info" variant="tonal" icon="mdi-information-outline">
+            {{ t('emptyHint') }}
+          </v-alert>
+
+          <template v-if="history.length">
+            <div class="text-title-medium mt-8 mb-2">{{ t('recent') }}</div>
+            <div class="d-flex flex-wrap ga-2">
+              <v-chip
+                v-for="h in history"
+                :key="h.key"
+                :prepend-icon="VEHICLES[h.vehicles[0]].icon"
+                :title="h.points.map(placeName).join(' → ')"
+                @click="restore(h)"
+              >
+                {{ routeLabel(h.points) }}
               </v-chip>
-            </v-chip-group>
-            <div class="text-body-small text-medium-emphasis mt-1">{{ t('multiHint') }}</div>
-            <ul class="text-body-small text-medium-emphasis mt-1 pl-4">
-              <li v-for="key in vehicles" :key="key">{{ t(`${key}.title`) }}: {{ t(`${key}.note`) }}</li>
-            </ul>
+            </div>
+          </template>
 
-            <v-text-field
-              v-if="vehicles.includes('custom')"
-              v-model.number="customSpeedKmh"
-              type="number"
-              min="1"
-              :label="t('speed')"
-              :suffix="t('kmh')"
-              prepend-inner-icon="mdi-speedometer"
-              variant="outlined"
-              class="mt-4"
-              hide-details
-            />
-          </div>
-        </v-card>
-
-        <EstimateResult />
-
-        <Route3D v-if="mode === 'list' && filledStops.length >= 2" />
-
-        <v-alert v-if="!results.length" type="info" variant="tonal" icon="mdi-information-outline">
-          {{ t('emptyHint') }}
-        </v-alert>
-
-        <template v-if="history.length">
-          <div class="text-title-medium mt-8 mb-2">{{ t('recent') }}</div>
-          <div class="d-flex flex-wrap ga-2">
-            <v-chip
-              v-for="h in history"
-              :key="h.key"
-              :prepend-icon="VEHICLES[h.vehicles[0]].icon"
-              :title="h.points.map(placeName).join(' → ')"
-              @click="restore(h)"
-            >
-              {{ routeLabel(h.points) }}
-            </v-chip>
-          </div>
-        </template>
-
-        <p class="text-body-small text-medium-emphasis mt-8">
-          {{ t('disclaimer') }}
-          <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a>
-          (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).
-        </p>
+          <p class="text-body-small text-medium-emphasis mt-8">
+            {{ t('disclaimer') }}
+            <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a>
+            (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).
+          </p>
+        </div>
       </v-container>
     </v-main>
 
@@ -212,6 +221,21 @@ function routeLabel(points) {
 </template>
 
 <style scoped>
+.layout-side {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* Карта не уезжает при прокрутке правой колонки и занимает всю высоту окна под шапкой. */
+.layout-side__map {
+  position: sticky;
+  top: calc(var(--v-layout-top, 64px) + 32px);
+  height: calc(100dvh - var(--v-layout-top, 64px) - 64px);
+  min-height: 420px;
+}
+
 .stops {
   --stop-gap: 12px;
   display: flex;
