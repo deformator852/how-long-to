@@ -6,7 +6,8 @@ import { t } from '../i18n'
 export const VEHICLES = {
   banderol: { icon: 'mdi-rocket-launch-outline', maxSpeedKmh: 650, rangeKm: 500 },
   geran2: { icon: 'mdi-quadcopter', maxSpeedKmh: 185, rangeKm: 2000 },
-  geran3: { icon: 'mdi-airplane', maxSpeedKmh: 600, rangeKm: 2000 },
+  geran3: { icon: 'mdi-airplane', maxSpeedKmh: 370, rangeKm: 1000 },
+  geran4: { icon: 'mdi-navigation-variant-outline', maxSpeedKmh: 500, rangeKm: 450 },
   geran5: { icon: 'mdi-airplane-takeoff', maxSpeedKmh: 600, rangeKm: 950 },
   custom: { icon: 'mdi-speedometer', maxSpeedKmh: 300, rangeKm: null },
 }

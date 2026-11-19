@@ -4,7 +4,7 @@ import { t } from '../i18n'
 import { loadPlaces, placeName, placeSubtitle, searchPlaces } from '../services/places'
 
 const model = defineModel({ type: Object, default: null })
-defineProps({ label: { type: String, required: true }, icon: { type: String, default: 'mdi-map-marker' } })
+defineProps({ label: { type: String, required: true }, icon: { type: String, default: undefined } })
 
 const search = ref('')
 const items = ref([])
@@ -59,11 +59,12 @@ watch(model, (v) => {
     no-filter
     clearable
     hide-no-data
+    hide-details="auto"
     variant="outlined"
     :placeholder="t('placeholder')"
   >
     <template #item="{ props: itemProps, item }">
-      <v-list-item v-bind="itemProps" :subtitle="placeSubtitle(item)" />
+      <v-list-item v-bind="itemProps" :subtitle="placeSubtitle(item)" lines="two" />
     </template>
   </v-autocomplete>
 </template>

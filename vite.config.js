@@ -7,6 +7,8 @@ import { defineConfig } from 'vite'
 // по адресу https://<user>.github.io/<repo>/ без хардкода имени репозитория.
 export default defineConfig({
   base: './',
+  // Самый большой чанк — MapLibre для 3D-вида (~1,1 МБ); он грузится лениво, только когда нужен.
+  build: { chunkSizeWarningLimit: 1200 },
   plugins: [
     vue(),
     vuetify({ autoImport: true }),
@@ -32,10 +34,35 @@ export default defineConfig({
       workbox: {
         // Справочник пунктов (~2 МБ) кешируем целиком — приложение работает офлайн.
         // ttf/eot иконочного шрифта не берём: современным браузерам хватает woff2.
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2,json}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // Шрифт иконок MDI запрашивается как ...woff2?v=7.4.47 — игнорируем ?v, иначе офлайн не найдёт его в кеше.
         ignoreURLParametersMatching: [/^v$/, /^utm_/],
+        // Тайлы карты OSM: всегда из сети (сервер отдаёт no-cache), без сети — последние просмотренные.
+        // Заранее ничего не скачиваем: массовая выгрузка тайлов запрещена правилами OSM.
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/tile\.openstreetmap\.org\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'osm-tiles',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 1000, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // 3D-вид: стиль, шрифты и векторные тайлы OpenFreeMap, рельеф AWS Terrain Tiles.
+            urlPattern: /^https:\/\/(tiles\.openfreemap\.org|s3\.amazonaws\.com\/elevation-tiles-prod)\//,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'map3d-tiles',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 1500, maxAgeSeconds: 30 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
       },
     }),
   ],

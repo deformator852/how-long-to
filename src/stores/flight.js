@@ -6,27 +6,59 @@ import { VEHICLES, flightMinutes } from '../utils/flight'
 const HISTORY_KEY = 'distance-count:history'
 const HISTORY_LIMIT = 8
 
+// Пункт маршрута: населённый пункт из справочника или точка с карты (custom: true).
+const isPoint = (p) => Boolean(p && (p.custom || p.name) && Number.isFinite(p.lat) && Number.isFinite(p.lon))
+
+/** Пункты, сохранённые двуязычной версией (nameUk/regionUk/nearUk), — к полям name/region/near. */
+const migratePoint = (p) =>
+  p && p.name === undefined && 'nameUk' in p ? { ...p, name: p.nameUk, region: p.regionUk ?? '', near: p.nearUk ?? '' } : p
+const routeKey = (points) => points.map((p) => p.id).join('-')
+
 function loadHistory() {
   try {
     const h = JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? []
     return h
-      // Записи старых форматов (до двуязычного справочника) отбрасываем.
-      .filter((e) => e.from?.nameUk && e.to?.nameUk)
-      .map((e) => ({ ...e, vehicles: (e.vehicles ?? [e.vehicle]).filter((v) => VEHICLES[v]) }))
+      // Старый формат {from, to} → points. Записи, которые не удалось разобрать, отбрасываем.
+      .map((e) => ({ ...e, points: (e.points ?? [e.from, e.to]).map(migratePoint) }))
+      .filter((e) => e.points.length >= 2 && e.points.every(isPoint))
+      .map((e) => ({
+        key: routeKey(e.points),
+        points: e.points,
+        vehicles: (e.vehicles ?? [e.vehicle]).filter((v) => VEHICLES[v]),
+      }))
       .filter((e) => e.vehicles.length)
   } catch {
     return []
   }
 }
 
+/**
+ * `next` — правка маршрута `prev`, а не новый маршрут: в конец дописали точки, или набор
+ * населённых пунктов из справочника тот же (точки на карте ставили, двигали, убирали, маршрут развернули).
+ * Выбрали другой пункт или убрали пункт из справочника — это уже новая запись в истории.
+ */
+function isEditOf(prev, next) {
+  if (prev.length < 2) return false
+  const extended = next.length > prev.length && prev.every((p, i) => p.id === next[i].id)
+  const placeIds = (points) => points.filter((p) => !p.custom).map((p) => p.id).sort().join()
+  return extended || placeIds(prev) === placeIds(next)
+}
+
+let lastStopKey = 0
+const newStop = (place = null) => ({ key: ++lastStopKey, place })
+
 export const useFlightStore = defineStore('flight', () => {
-  const from = ref(null)
-  const to = ref(null)
+  // Слоты цепочки. Пустой слот (place: null) — поле, которое ещё не заполнили.
+  const stops = ref([newStop(), newStop()])
   const vehicles = ref(['banderol'])
   const customSpeedKmh = ref(VEHICLES.custom.maxSpeedKmh)
   const history = ref(loadHistory())
 
-  const distanceKm = computed(() => (from.value && to.value ? haversineKm(from.value, to.value) : null))
+  const filledStops = computed(() => stops.value.filter((s) => s.place))
+  const points = computed(() => filledStops.value.map((s) => s.place))
+  /** Длина каждого отрезка цепочки, км: legsKm[i] — от points[i] до points[i + 1]. */
+  const legsKm = computed(() => points.value.slice(1).map((p, i) => haversineKm(points.value[i], p)))
+  const distanceKm = computed(() => (points.value.length >= 2 ? legsKm.value.reduce((sum, d) => sum + d, 0) : null))
 
   const speedOf = (key) => (key === 'custom' ? Number(customSpeedKmh.value) || 0 : VEHICLES[key].maxSpeedKmh)
 
@@ -49,22 +81,65 @@ export const useFlightStore = defineStore('flight', () => {
       .sort((a, b) => a.minutes - b.minutes)
   })
 
-  function swap() {
-    ;[from.value, to.value] = [to.value, from.value]
+  /** В цепочке всегда минимум два слота — «Откуда» и «Куда». */
+  function pad(list) {
+    while (list.length < 2) list.push(newStop())
+    return list
   }
+
+  function addStop() {
+    stops.value.push(newStop())
+  }
+
+  function removeStop(key) {
+    stops.value = pad(stops.value.filter((s) => s.key !== key))
+  }
+
+  function setPlace(key, place) {
+    const stop = stops.value.find((s) => s.key === key)
+    if (stop) stop.place = place
+  }
+
+  /** Точка с карты: в пустой слот после последней заполненной точки, иначе в конец цепочки. */
+  function addPoint(place) {
+    const next = stops.value[stops.value.findLastIndex((s) => s.place) + 1]
+    if (next) next.place = place
+    else stops.value.push(newStop(place))
+  }
+
+  function removeLastPoint() {
+    const last = filledStops.value.at(-1)
+    if (last) removeStop(last.key)
+  }
+
+  function reverse() {
+    stops.value = [...stops.value].reverse()
+  }
+
+  function clear() {
+    stops.value = pad([])
+  }
+
+  // Маршрут до последнего изменения — чтобы отличить правку текущего маршрута от нового.
+  let prevPoints = []
 
   function restore(entry) {
-    from.value = entry.from
-    to.value = entry.to
+    stops.value = pad(entry.points.map((p) => newStop(p)))
     vehicles.value = [...entry.vehicles]
+    prevPoints = [] // восстановленный маршрут — не правка текущего, его запись не затираем
   }
 
-  watch([from, to], () => {
-    if (!from.value || !to.value) return
-    const key = `${from.value.id}-${to.value.id}`
+  watch(() => routeKey(points.value), () => {
+    const next = [...points.value]
+    const prev = prevPoints
+    prevPoints = next
+    if (next.length < 2) return
+    const key = routeKey(next)
+    // Пока маршрут правят — обновляем его запись, а не плодим почти одинаковые.
+    const replaceTop = history.value[0]?.key === routeKey(prev) && isEditOf(prev, next)
     history.value = [
-      { key, from: from.value, to: to.value, vehicles: [...vehicles.value] },
-      ...history.value.filter((h) => h.key !== key),
+      { key, points: next, vehicles: [...vehicles.value] },
+      ...history.value.slice(replaceTop ? 1 : 0).filter((h) => h.key !== key),
     ].slice(0, HISTORY_LIMIT)
     try {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value))
@@ -73,5 +148,23 @@ export const useFlightStore = defineStore('flight', () => {
     }
   })
 
-  return { from, to, vehicles, customSpeedKmh, history, distanceKm, results, swap, restore }
+  return {
+    stops,
+    vehicles,
+    customSpeedKmh,
+    history,
+    filledStops,
+    points,
+    legsKm,
+    distanceKm,
+    results,
+    addStop,
+    removeStop,
+    setPlace,
+    addPoint,
+    removeLastPoint,
+    reverse,
+    clear,
+    restore,
+  }
 })

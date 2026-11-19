@@ -1,11 +1,28 @@
 // Поиск населённых пунктов Украины по локальному справочнику public/places-ua.json
 // (собирается скриптом scripts/build_places.py из GeoNames, CC BY 4.0).
-// Искать можно на украинском и на русском; показывается название на языке интерфейса.
-import { lang, numberLocale, t } from '../i18n'
+// Показываются украинские названия; искать можно и по-украински, и по-русски.
+import { NUMBER_LOCALE, t } from '../i18n'
+import { haversineKm } from '../utils/geo'
+
+// Дальше этого точку с карты не называем по ближайшему пункту (море, территория РФ) — только координаты.
+const NEAR_LIMIT_KM = 15
+
+const DIRECTIONS = [
+  'на північ', 'на північний схід', 'на схід', 'на південний схід',
+  'на південь', 'на південний захід', 'на захід', 'на північний захід',
+]
 
 let indexPromise = null
 
 const normalize = (s) => s.toLowerCase().replace(/ё/g, 'е').replace(/[’'ʼ`]/g, '')
+
+/** Направление от `from` к `to` по сторонам света: «на північний захід». */
+function direction(from, to) {
+  const dx = (to.lon - from.lon) * Math.cos((from.lat * Math.PI) / 180)
+  const dy = to.lat - from.lat
+  const deg = (Math.atan2(dx, dy) * 180) / Math.PI // 0° — север, 90° — восток
+  return DIRECTIONS[Math.round((deg + 360) / 45) % 8]
+}
 
 /** Загружает справочник один раз; повторные вызовы получают тот же промис. */
 export function loadPlaces() {
@@ -14,24 +31,30 @@ export function loadPlaces() {
       if (!res.ok) throw new Error(`places-ua.json: HTTP ${res.status}`)
       return res.json()
     })
-    .then(({ regions, places }) => {
-      const list = places.map(([ru, uk, region, lat, lon, population, nearIdx, nearKm], id) => ({
+    .then(({ regions, districts, places }) => {
+      const list = places.map(([id, name, ru, region, district, lat, lon, population, nearIdx, nearKm]) => ({
         id,
-        nameRu: ru,
-        nameUk: uk || ru, // пустое uk = совпадает с русским или нет в источнике
-        regionRu: regions[region]?.[0] ?? '',
-        regionUk: regions[region]?.[1] ?? '',
+        name,
+        region: regions[region] ?? '',
+        district: districts[district] ?? '',
         lat,
         lon,
         population,
         nearIdx,
         nearKm,
-        keys: [normalize(ru), ...(uk ? [normalize(uk)] : [])],
+        keys: [normalize(name), ...(ru ? [normalize(ru)] : [])],
       }))
+      for (const p of list) p.near = p.nearIdx >= 0 ? list[p.nearIdx].name : ''
+
+      // Одноимённые пункты одного района на одном расстоянии от одного города различаем направлением.
+      const sameHint = new Map()
       for (const p of list) {
-        const near = p.nearIdx >= 0 ? list[p.nearIdx] : null
-        p.nearRu = near?.nameRu ?? ''
-        p.nearUk = near?.nameUk ?? ''
+        if (!p.near) continue
+        const key = [p.name, p.region, p.district, p.nearIdx, p.nearKm].join('|')
+        sameHint.set(key, [...(sameHint.get(key) ?? []), p])
+      }
+      for (const group of sameHint.values()) {
+        if (group.length > 1) for (const p of group) p.nearDir = direction(list[p.nearIdx], p)
       }
       return list
     })
@@ -63,15 +86,64 @@ export async function searchPlaces(query, limit = 10) {
   return buckets.flat().slice(0, limit)
 }
 
-const uk = () => lang.value === 'uk'
+/** Ближайший населённый пункт справочника (для подписи точек, поставленных на карте). */
+export async function nearestPlace(lat, lon) {
+  const list = await loadPlaces()
+  const kx = Math.cos((lat * Math.PI) / 180) // поправка на сужение градуса долготы
+  let best = null
+  let bestD = Infinity
+  for (const p of list) {
+    const d = ((p.lon - lon) * kx) ** 2 + (p.lat - lat) ** 2
+    if (d < bestD) [best, bestD] = [p, d]
+  }
+  return best
+}
 
-export const placeName = (p) => (p ? (uk() ? p.nameUk : p.nameRu) : '')
+/** Точка маршрута, поставленная на карте. Подписывается ближайшим пунктом, если он рядом. */
+export async function mapPoint(lat, lon) {
+  lat = Number(lat.toFixed(5))
+  lon = Number(lon.toFixed(5))
+  let near = null
+  try {
+    near = await nearestPlace(lat, lon)
+  } catch {
+    /* справочник не загрузился — останутся координаты */
+  }
+  const nearKm = near ? haversineKm({ lat, lon }, near) : Infinity
+  const named = nearKm <= NEAR_LIMIT_KM
+  return {
+    id: `pt${lat},${lon}`,
+    custom: true,
+    lat,
+    lon,
+    name: named ? near.name : '',
+    region: named ? near.region : '',
+    district: named ? near.district : '',
+    nearKm: named ? Math.round(nearKm) : null,
+  }
+}
 
-/** Подпись под названием: «Донецька обл. · 13 км від м. Слов’янськ». */
+const coords = (p) => `${p.lat.toFixed(3)}, ${p.lon.toFixed(3)}`
+
+/** Название пункта; точка с карты — «≈ Чугуїв» или координаты, если пунктов рядом нет. */
+export function placeName(p) {
+  if (!p) return ''
+  if (p.custom) return p.name ? `≈ ${p.name}` : coords(p)
+  return p.name
+}
+
+/** Подпись под названием: «Чугуївський р-н, Харківська обл. · 13 км від м. Харків». */
 export function placeSubtitle(p) {
-  const parts = [uk() ? p.regionUk : p.regionRu]
-  const near = uk() ? p.nearUk : p.nearRu
-  if (near && p.nearKm > 0) parts.push(t('kmFrom', { km: p.nearKm, city: near }))
-  else if (p.population >= 10000) parts.push(t('residents', { n: p.population.toLocaleString(numberLocale()) }))
-  return parts.filter(Boolean).join(' · ')
+  const where = [p.district, p.region].filter(Boolean).join(', ')
+  let hint = ''
+  if (p.custom) {
+    if (p.name && p.nearKm > 0) hint = t('kmFromPlace', { km: p.nearKm, name: p.name })
+  } else if (p.near && p.nearKm > 0) {
+    hint = p.nearDir
+      ? t('kmFromDir', { km: p.nearKm, dir: p.nearDir, city: p.near })
+      : t('kmFrom', { km: p.nearKm, city: p.near })
+  } else if (p.population >= 10000) {
+    hint = t('residents', { n: p.population.toLocaleString(NUMBER_LOCALE) })
+  }
+  return [where, hint, p.custom ? coords(p) : ''].filter(Boolean).join(' · ')
 }
