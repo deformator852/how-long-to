@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useFlightStore } from '../stores/flight'
 import { flightMinutes, formatDuration } from '../utils/flight'
@@ -7,7 +7,11 @@ import { placeName } from '../services/places'
 import PointBadge from './PointBadge.vue'
 import { NUMBER_LOCALE, t } from '../i18n'
 
-const { results, distanceKm, points, legsKm } = storeToRefs(useFlightStore())
+const { results: byTime, distanceKm, points, legsKm } = storeToRefs(useFlightStore())
+
+// В сторе — от быстрого к медленному; кнопкой можно развернуть порядок.
+const slowFirst = ref(false)
+const results = computed(() => (slowFirst.value ? [...byTime.value].reverse() : byTime.value))
 
 const km = (v) => Math.round(v).toLocaleString(NUMBER_LOCALE)
 
@@ -27,9 +31,21 @@ const beyondRange = (r, i) => r.rangeKm != null && cumKm.value[i] > r.rangeKm
   <v-card v-if="results.length" variant="tonal" color="primary" class="pa-2">
     <v-card-item>
       <v-card-subtitle>{{ t('resultTitle') }}</v-card-subtitle>
-      <v-chip prepend-icon="mdi-map-marker-distance" variant="outlined" class="mt-2">
-        {{ km(distanceKm) }} {{ points.length > 2 ? t('kmRoute') : t('kmStraight') }}
-      </v-chip>
+      <div class="d-flex align-center flex-wrap ga-2 mt-2">
+        <v-chip prepend-icon="mdi-map-marker-distance" variant="outlined">
+          {{ km(distanceKm) }} {{ points.length > 2 ? t('kmRoute') : t('kmStraight') }}
+        </v-chip>
+        <v-btn
+          v-if="results.length > 1"
+          :prepend-icon="slowFirst ? 'mdi-sort-ascending' : 'mdi-sort-descending'"
+          variant="outlined"
+          size="small"
+          rounded="pill"
+          @click="slowFirst = !slowFirst"
+        >
+          {{ slowFirst ? t('sortSlowFirst') : t('sortFastFirst') }}
+        </v-btn>
+      </div>
     </v-card-item>
 
     <v-card-text class="pt-0">

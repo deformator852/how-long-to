@@ -235,6 +235,26 @@ function fit(duration = 0) {
   map.easeTo({ ...cam, zoom: Math.min(cam.zoom, 11) - zoomOut, bearing: camBearing, pitch: PITCH, duration })
 }
 
+/** Кнопка под зумом: вернуть камеру ко всем точкам маршрута. */
+class FitControl {
+  onAdd() {
+    this.box = document.createElement('div')
+    this.box.className = 'maplibregl-ctrl maplibregl-ctrl-group'
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.title = btn.ariaLabel = t('route3dFit')
+    btn.className = 'route3d-fit'
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 3h6v2H5v4H3V3m12 0h6v6h-2V5h-4V3M3 15h2v4h4v2H3v-6m16 0h2v6h-6v-2h4v-4M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8m0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg>'
+    btn.addEventListener('click', () => fit(800))
+    this.box.append(btn)
+    return this.box
+  }
+
+  onRemove() {
+    this.box.remove()
+  }
+}
+
 const styleUrl = () => (theme.current.value.dark ? STYLES.dark : STYLES.light)
 
 onMounted(() => {
@@ -254,6 +274,7 @@ onMounted(() => {
     return
   }
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+  map.addControl(new FitControl(), 'top-right')
   map.addControl(new maplibregl.FullscreenControl(), 'top-right')
   // В тёмном стиле OpenFreeMap есть ссылки на иконки, которых нет в его спрайте, — подставляем пустые.
   map.setMissingStyleImageResolver((id) => map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) }))
@@ -349,6 +370,13 @@ onBeforeUnmount(() => {
   text-align: center;
   background: rgb(var(--v-theme-surface-light));
   color: rgb(var(--v-theme-on-surface));
+}
+
+.route3d-fit {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: #333;
 }
 
 .route3d-pin {

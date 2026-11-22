@@ -86,6 +86,11 @@ export async function searchPlaces(query, limit = 10) {
   return buckets.flat().slice(0, limit)
 }
 
+/** Крупнейшие пункты — список по умолчанию, пока ничего не введено (справочник отсортирован по населению). */
+export async function topPlaces(limit = 30) {
+  return (await loadPlaces()).slice(0, limit)
+}
+
 /** Ближайший населённый пункт справочника (для подписи точек, поставленных на карте). */
 export async function nearestPlace(lat, lon) {
   const list = await loadPlaces()
