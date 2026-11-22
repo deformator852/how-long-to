@@ -10,6 +10,8 @@ import { VEHICLES } from './utils/flight'
 import { t } from './i18n'
 import { placeName } from './services/places'
 
+const SOURCE_URL = 'https://github.com/deformator852/how-long-to'
+
 const CONTACTS = [
   { label: 'kostneko30@gmail.com', href: 'mailto:kostneko30@gmail.com', icon: 'mdi-email-outline' },
   { label: 'LinkedIn', href: 'https://www.linkedin.com/in/nikita-kostenko141/', icon: 'mdi-linkedin' },
@@ -201,7 +203,21 @@ function routeLabel(points) {
     </v-main>
 
     <v-footer class="justify-center flex-column flex-grow-0 ga-2 py-6" color="surface-light">
+      <v-chip prepend-icon="mdi-cellphone-arrow-down" color="primary" variant="tonal" size="small">
+        {{ t('mobileSoon') }}
+      </v-chip>
       <div class="d-flex flex-wrap justify-center ga-2">
+        <v-btn
+          :href="SOURCE_URL"
+          prepend-icon="mdi-source-branch"
+          target="_blank"
+          rel="noopener"
+          variant="text"
+          size="small"
+          class="text-none"
+        >
+          {{ t('sourceCode') }}
+        </v-btn>
         <v-btn
           v-for="c in CONTACTS"
           :key="c.href"
