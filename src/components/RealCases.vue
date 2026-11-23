@@ -1,14 +1,16 @@
 <script setup>
-// Блок «Перевірка на реальних атаках»: хронология постов официальных каналов и расчёт приложения
+// Страница «Наскільки точний застосунок»: хронология постов официальных каналов и расчёт приложения
 // для тех же точек — тем же кодом, что и основной расчёт (haversineKm + flightMinutes).
-import { computed, onMounted, ref } from 'vue'
+// «Перевірити самому» раскрывает в примере полноценный калькулятор с этим маршрутом — отдельный экземпляр,
+// главную страницу и её историю он не трогает.
+import { computed, effectScope, onMounted, onScopeDispose, reactive, ref, shallowReactive } from 'vue'
+import FlightCalculator from './FlightCalculator.vue'
+import { createFlight } from '../composables/flight'
 import { REAL_CASES, SOURCES } from '../data/realCases'
 import { loadPlaces, placeName } from '../services/places'
 import { haversineKm } from '../utils/geo'
 import { VEHICLES, flightMinutes, formatDuration } from '../utils/flight'
 import { NUMBER_LOCALE, t } from '../i18n'
-
-const emit = defineEmits(['open'])
 
 const places = ref(null) // Map id → пункт; null — справочник ещё не загружен (или не загрузился)
 
@@ -71,6 +73,20 @@ function build(c) {
 const cases = computed(() => REAL_CASES.map(build))
 const openPanels = ref([REAL_CASES[0].id]) // первый (самый показательный) пример раскрыт сразу
 
+// Калькуляторы примеров создаются при первом «Перевірити самому» и живут, пока открыта страница
+// (свернуть и развернуть — правки сохраняются). Отдельный scope — чтобы их computed удалились вместе со страницей.
+const labScope = effectScope()
+onScopeDispose(() => labScope.stop())
+const labs = shallowReactive({}) // id примера → экземпляр createFlight()
+const shown = reactive({}) // id примера → калькулятор раскрыт
+
+const initialRoute = (c) => ({ points: c.points, vehicles: c.vehicles })
+
+function toggleLab(c) {
+  labs[c.id] ??= labScope.run(() => createFlight(initialRoute(c)))
+  shown[c.id] = !shown[c.id]
+}
+
 function verdict(c) {
   const diff = formatDuration(Math.abs(c.realMin - c.closest.minutes))
   const name = shortTitle(c.closest.key)
@@ -126,15 +142,32 @@ function verdict(c) {
             <div v-if="c.note" class="mt-2 text-medium-emphasis">{{ c.note }}</div>
           </v-sheet>
 
-          <v-btn
-            class="mt-3"
-            prepend-icon="mdi-map-marker-path"
-            variant="tonal"
-            :disabled="!c.points"
-            @click="emit('open', { points: c.points, vehicles: c.vehicles })"
-          >
-            {{ t('casesOpen') }}
-          </v-btn>
+          <div class="d-flex flex-wrap ga-2 mt-3">
+            <v-btn
+              :prepend-icon="shown[c.id] ? 'mdi-chevron-up' : 'mdi-play-circle-outline'"
+              :variant="shown[c.id] ? 'tonal' : 'flat'"
+              color="primary"
+              :disabled="!c.points"
+              @click="toggleLab(c)"
+            >
+              {{ shown[c.id] ? t('labHide') : t('labShow') }}
+            </v-btn>
+            <v-btn
+              v-if="shown[c.id]"
+              prepend-icon="mdi-restore"
+              variant="text"
+              @click="labs[c.id].restore(initialRoute(c))"
+            >
+              {{ t('labReset') }}
+            </v-btn>
+          </div>
+
+          <div v-if="shown[c.id]" class="mt-4">
+            <v-alert type="info" variant="tonal" density="compact" icon="mdi-clock-outline" class="mb-4">
+              {{ t('labHint', { real: formatDuration(c.realMin) }) }}
+            </v-alert>
+            <FlightCalculator :flight="labs[c.id]" />
+          </div>
         </v-expansion-panel-text>
       </v-expansion-panel>
     </v-expansion-panels>
