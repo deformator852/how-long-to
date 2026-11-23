@@ -1,12 +1,9 @@
 <script setup>
-import { storeToRefs } from 'pinia'
-import PlaceAutocomplete from './components/PlaceAutocomplete.vue'
-import PointBadge from './components/PointBadge.vue'
-import EstimateResult from './components/EstimateResult.vue'
-import RealCases from './components/RealCases.vue'
-import { computed, defineAsyncComponent, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
-import { useFlightStore } from './stores/flight'
+import FlightCalculator from './components/FlightCalculator.vue'
+import RealCases from './components/RealCases.vue'
+import { createFlight } from './composables/flight'
 import { VEHICLES } from './utils/flight'
 import { t } from './i18n'
 import { placeName } from './services/places'
@@ -19,16 +16,11 @@ const CONTACTS = [
   { label: 'GitHub', href: 'https://github.com/deformator852', icon: 'mdi-github' },
 ]
 
-// Leaflet грузится отдельным чанком — только когда открывают режим «Карта».
-const RouteMap = defineAsyncComponent(() => import('./components/RouteMap.vue'))
-// MapLibre (~1,6 МБ вместе с воркером) — тоже отдельным чанком, только для 3D-вида в режиме «Список».
-const Route3D = defineAsyncComponent(() => import('./components/Route3D.vue'))
+// Калькулятор главной страницы — единственный, кто ведёт «Нещодавні маршрути».
+const flight = createFlight({ persistHistory: true })
+const calculator = ref(null)
+const mode = ref('list') // режим калькулятора главной: 'list' или 'map'
 
-const store = useFlightStore()
-const { stops, filledStops, vehicles, customSpeedKmh, history, results } = storeToRefs(store)
-
-const mode = ref('list') // 'list' — поля с поиском пунктов, 'map' — точки кликами по карте
-// На широком экране в режиме «Список» 3D-карта стоит слева, форма и результаты — справа.
 // Страница «Наскільки точний застосунок» — по адресу #accuracy (ссылкой можно делиться), назад — кнопкой браузера.
 const pageFromUrl = () => (location.hash === '#accuracy' ? 'accuracy' : 'main')
 const page = ref(pageFromUrl())
@@ -41,29 +33,13 @@ function go(to) {
   window.scrollTo({ top: 0 })
 }
 
+// На широком экране в режиме «Список» 3D-карта стоит слева от формы — странице нужна большая ширина.
 const { lgAndUp, smAndUp } = useDisplay()
-const sideMap = computed(() => page.value === 'main' && mode.value === 'list' && lgAndUp.value)
-const routeMap = ref(null)
-const autofocusKey = ref(null)
+const wide = computed(() => mode.value === 'list' && lgAndUp.value)
 
-const stopLabel = (i) => (i === 0 ? t('from') : i === stops.value.length - 1 ? t('to') : t('via'))
-
-function addStop() {
-  store.addStop()
-  autofocusKey.value = stops.value.at(-1).key
-}
-
-async function restore(entry) {
-  store.restore(entry)
-  await nextTick()
-  routeMap.value?.fit()
-}
-
-/** Пример со страницы точности — в форму, на главную к результату. */
-function openCase(entry) {
-  mode.value = 'list'
-  store.restore(entry)
-  go('main')
+function restore(entry) {
+  flight.restore(entry)
+  calculator.value?.fitMap()
 }
 
 function routeLabel(points) {
@@ -96,131 +72,16 @@ function routeLabel(points) {
         <v-btn href="./" prepend-icon="mdi-arrow-left" variant="text" class="text-none mb-4" @click.prevent="go('main')">
           {{ t('backToCalc') }}
         </v-btn>
-        <RealCases @open="openCase" />
+        <RealCases />
       </v-container>
 
-      <v-container v-else class="py-8" :class="{ 'layout-side': sideMap }" :style="{ maxWidth: sideMap ? '1600px' : '760px' }">
-        <aside v-if="sideMap" class="layout-side__map">
-          <Route3D side />
-        </aside>
-        <div class="layout-side__main">
-          <v-card class="mb-6">
-            <v-tabs v-model="mode" grow color="primary">
-              <v-tab value="list" prepend-icon="mdi-format-list-numbered">{{ t('modeList') }}</v-tab>
-              <v-tab value="map" prepend-icon="mdi-map-marker-path">{{ t('modeMap') }}</v-tab>
-            </v-tabs>
-            <v-divider />
-
-            <div class="pa-4">
-              <div v-if="mode === 'list'" class="stops">
-                <div v-for="(s, i) in stops" :key="s.key" class="stop-row">
-                  <div class="stop-rail">
-                    <PointBadge :index="i" :size="26" />
-                  </div>
-                  <PlaceAutocomplete
-                    v-model="s.place"
-                    :label="stopLabel(i)"
-                    :autofocus="s.key === autofocusKey"
-                    class="flex-grow-1"
-                  />
-                  <v-btn
-                    v-if="stops.length > 2"
-                    icon="mdi-close"
-                    variant="text"
-                    size="small"
-                    class="align-self-center"
-                    :title="t('removePoint')"
-                    :aria-label="t('removePoint')"
-                    @click="store.removeStop(s.key)"
-                  />
-                </div>
-              </div>
-
-              <template v-else>
-                <div class="text-body-small text-medium-emphasis mb-2">{{ t('mapHint') }}</div>
-                <RouteMap ref="routeMap" />
-                <div v-if="filledStops.length" class="d-flex flex-wrap ga-2 mt-3">
-                  <v-chip
-                    v-for="(s, i) in filledStops"
-                    :key="s.key"
-                    size="small"
-                    closable
-                    :close-label="t('removePoint')"
-                    @click:close="store.removeStop(s.key)"
-                  >
-                    <PointBadge :index="i" :size="18" class="mr-1 ml-n1" />{{ placeName(s.place) }}
-                  </v-chip>
-                </div>
-              </template>
-
-              <div class="d-flex flex-wrap align-center ga-2 mt-3">
-                <v-btn v-if="mode === 'list'" prepend-icon="mdi-plus" variant="tonal" @click="addStop">
-                  {{ t('addPoint') }}
-                </v-btn>
-                <v-btn
-                  v-else
-                  prepend-icon="mdi-undo"
-                  variant="tonal"
-                  :disabled="!filledStops.length"
-                  :title="t('undoHint')"
-                  @click="store.removeLastPoint"
-                >
-                  {{ t('undo') }}
-                </v-btn>
-                <v-spacer />
-                <v-btn prepend-icon="mdi-swap-vertical" variant="text" :title="t('reverseHint')" @click="store.reverse">
-                  {{ t('reverse') }}
-                </v-btn>
-                <v-btn
-                  prepend-icon="mdi-delete-outline"
-                  variant="text"
-                  :disabled="!filledStops.length && stops.length <= 2"
-                  @click="store.clear"
-                >
-                  {{ t('clear') }}
-                </v-btn>
-              </div>
-
-              <v-divider class="mt-4 mb-2" />
-
-              <v-chip-group v-model="vehicles" multiple mandatory selected-class="text-primary" column>
-                <v-chip v-for="(v, key) in VEHICLES" :key="key" :value="key" :prepend-icon="v.icon" variant="outlined" filter>
-                  {{ t(`${key}.title`) }}
-                </v-chip>
-              </v-chip-group>
-              <div class="text-body-small text-medium-emphasis mt-1">{{ t('multiHint') }}</div>
-              <ul class="text-body-small text-medium-emphasis mt-1 pl-4">
-                <li v-for="key in vehicles" :key="key">{{ t(`${key}.title`) }}: {{ t(`${key}.note`) }}</li>
-              </ul>
-
-              <v-text-field
-                v-if="vehicles.includes('custom')"
-                v-model.number="customSpeedKmh"
-                type="number"
-                min="1"
-                :label="t('speed')"
-                :suffix="t('kmh')"
-                prepend-inner-icon="mdi-speedometer"
-                variant="outlined"
-                class="mt-4"
-                hide-details
-              />
-            </div>
-          </v-card>
-
-          <EstimateResult />
-
-          <Route3D v-if="!sideMap && mode === 'list' && filledStops.length >= 2" class="mt-6" />
-
-          <v-alert v-if="!results.length" type="info" variant="tonal" icon="mdi-information-outline">
-            {{ t('emptyHint') }}
-          </v-alert>
-
-          <template v-if="history.length">
+      <v-container v-else class="py-8" :style="{ maxWidth: wide ? '1600px' : '760px' }">
+        <FlightCalculator ref="calculator" v-model:mode="mode" :flight="flight" side>
+          <template v-if="flight.history.length">
             <div class="text-title-medium mt-8 mb-2">{{ t('recent') }}</div>
             <div class="d-flex flex-wrap ga-2">
               <v-chip
-                v-for="h in history"
+                v-for="h in flight.history"
                 :key="h.key"
                 :prepend-icon="VEHICLES[h.vehicles[0]].icon"
                 :title="h.points.map(placeName).join(' → ')"
@@ -236,7 +97,7 @@ function routeLabel(points) {
             <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a>
             (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).
           </p>
-        </div>
+        </FlightCalculator>
       </v-container>
     </v-main>
 
@@ -274,48 +135,3 @@ function routeLabel(points) {
     </v-footer>
   </v-app>
 </template>
-
-<style scoped>
-.layout-side {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 24px;
-  align-items: start;
-}
-
-/* Карта не уезжает при прокрутке правой колонки и занимает всю высоту окна под шапкой. */
-.layout-side__map {
-  position: sticky;
-  top: calc(var(--v-layout-top, 64px) + 32px);
-  height: calc(100dvh - var(--v-layout-top, 64px) - 64px);
-  min-height: 420px;
-}
-
-.stops {
-  --stop-gap: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--stop-gap);
-}
-
-.stop-row {
-  display: flex;
-  gap: 8px;
-}
-
-/* Колонка с номером точки; пунктир от номера к номеру показывает, что точки — одна цепочка. */
-.stop-rail {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.stop-row:not(:last-child) .stop-rail::after {
-  content: '';
-  position: absolute;
-  top: calc(50% + 17px);
-  left: 12px;
-  height: calc(100% - 34px + var(--stop-gap));
-  border-left: 2px dotted rgba(var(--v-theme-on-surface), 0.3);
-}
-</style>
