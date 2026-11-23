@@ -1,11 +1,11 @@
-"""Собирает public/places-ua.json — справочник населённых пунктов Украины.
+"""Собирает packages/core/data/places-ua.json — справочник населённых пунктов Украины.
 
 Источник: GeoNames (CC BY 4.0), https://download.geonames.org/export/dump/
   UA.zip                 -> UA.txt (объекты Украины, включая районы — ADM2)
   alternatenames/UA.zip  -> UA.txt (названия на разных языках)
 
 Запуск:
-  python3 scripts/build_places.py <путь к основному UA.txt> <путь к alternatenames UA.txt> public/places-ua.json
+  python3 scripts/build_places.py <путь к основному UA.txt> <путь к alternatenames UA.txt> packages/core/data/places-ua.json
 
 Формат результата (компактный, чтобы файл был маленьким):
   {"regions": [uk, ...],

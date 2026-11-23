@@ -1,8 +1,11 @@
-// Поиск населённых пунктов Украины по локальному справочнику public/places-ua.json
+// Поиск населённых пунктов Украины по справочнику data/places-ua.json
 // (собирается скриптом scripts/build_places.py из GeoNames, CC BY 4.0).
 // Показываются украинские названия; искать можно и по-украински, и по-русски.
-import { NUMBER_LOCALE, t } from '../i18n'
-import { haversineKm } from '../utils/geo'
+//
+// Как получить сам JSON, решает приложение: веб скачивает его по URL, мобильное — берёт из бандла.
+// Поэтому до первого обращения к справочнику приложение вызывает configurePlaces({ load }).
+import { NUMBER_LOCALE, t } from './i18n.js'
+import { haversineKm } from './geo.js'
 
 // Дальше этого точку с карты не называем по ближайшему пункту (море, территория РФ) — только координаты.
 const NEAR_LIMIT_KM = 15
@@ -13,6 +16,16 @@ const DIRECTIONS = [
 ]
 
 let indexPromise = null
+let loadRaw = null
+
+/**
+ * Откуда брать справочник: load() → Promise с содержимым data/places-ua.json (уже разобранный объект).
+ * Веб: () => fetch(url).then((r) => r.json()); React Native: () => Promise.resolve(require('…/places-ua.json')).
+ */
+export function configurePlaces({ load }) {
+  loadRaw = load
+  indexPromise = null
+}
 
 const normalize = (s) => s.toLowerCase().replace(/ё/g, 'е').replace(/[’'ʼ`]/g, '')
 
@@ -26,11 +39,9 @@ function direction(from, to) {
 
 /** Загружает справочник один раз; повторные вызовы получают тот же промис. */
 export function loadPlaces() {
-  indexPromise ??= fetch(`${import.meta.env.BASE_URL}places-ua.json`)
-    .then((res) => {
-      if (!res.ok) throw new Error(`places-ua.json: HTTP ${res.status}`)
-      return res.json()
-    })
+  if (!loadRaw) return Promise.reject(new Error('places: сначала вызовите configurePlaces({ load })'))
+  indexPromise ??= Promise.resolve()
+    .then(loadRaw)
     .then(({ regions, districts, places }) => {
       const list = places.map(([id, name, ru, region, district, lat, lon, population, nearIdx, nearKm]) => ({
         id,

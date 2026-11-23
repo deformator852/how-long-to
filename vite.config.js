@@ -1,5 +1,4 @@
-import vue from '@vitejs/plugin-vue'
-import vuetify from 'vite-plugin-vuetify'
+import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { defineConfig } from 'vite'
 
@@ -10,8 +9,7 @@ export default defineConfig({
   // Самый большой чанк — MapLibre для 3D-вида (~1,1 МБ); он грузится лениво, только когда нужен.
   build: { chunkSizeWarningLimit: 1200 },
   plugins: [
-    vue(),
-    vuetify({ autoImport: true }),
+    react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],

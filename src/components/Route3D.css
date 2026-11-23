@@ -1,0 +1,74 @@
+/* Стили 3D-карты. Маркеры MapLibre создаются вручную, поэтому стили глобальные. */
+.route3d-hint {
+  white-space: normal;
+}
+
+.route3d-wrap {
+  position: relative;
+}
+
+.route3d-card--side {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.route3d-card--side .route3d-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+.route3d-card--side .route3d {
+  height: 100%;
+  min-height: 0;
+}
+
+.route3d {
+  height: min(60vh, 460px);
+  min-height: 300px;
+}
+
+.route3d-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background: var(--surface-light);
+  color: var(--on-surface);
+}
+
+.route3d-fit {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+.route3d-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  font: 600 13px/1 system-ui, sans-serif;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+}
+
+.route3d-pin__label {
+  position: absolute;
+  left: calc(100% + 4px);
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--on-surface);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
