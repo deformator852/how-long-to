@@ -1,0 +1,180 @@
+<script setup>
+// Блок «Перевірка на реальних атаках»: хронология постов официальных каналов и расчёт приложения
+// для тех же точек — тем же кодом, что и основной расчёт (haversineKm + flightMinutes).
+import { computed, onMounted, ref } from 'vue'
+import { REAL_CASES, SOURCES } from '../data/realCases'
+import { loadPlaces, placeName } from '../services/places'
+import { haversineKm } from '../utils/geo'
+import { VEHICLES, flightMinutes, formatDuration } from '../utils/flight'
+import { NUMBER_LOCALE, t } from '../i18n'
+
+const emit = defineEmits(['open'])
+
+const places = ref(null) // Map id → пункт; null — справочник ещё не загружен (или не загрузился)
+
+onMounted(async () => {
+  try {
+    const ids = new Set(REAL_CASES.flatMap((c) => c.route))
+    const list = await loadPlaces()
+    places.value = new Map(list.filter((p) => ids.has(p.id)).map((p) => [p.id, p]))
+  } catch {
+    /* без справочника остаётся хронология постов, без расчёта */
+  }
+})
+
+const TZ = 'Europe/Kyiv'
+const timeFmt = new Intl.DateTimeFormat(NUMBER_LOCALE, { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const dateFmt = new Intl.DateTimeFormat(NUMBER_LOCALE, { timeZone: TZ, day: 'numeric', month: 'long' })
+
+const shortTitle = (key) => t(`${key}.title`).replace(/\s*\(.*\)$/, '')
+const km = (v) => v.toLocaleString(NUMBER_LOCALE, { maximumFractionDigits: 1 })
+
+function build(c) {
+  const time = (post) => Date.parse(c.events.find((e) => e.post === post).at)
+  const t0 = time(c.start)
+  const realMin = (time(c.end) - t0) / 60000
+
+  const points = c.route.map((id) => places.value?.get(id))
+  const ready = points.every(Boolean)
+  const distanceKm = ready ? points.slice(1).reduce((sum, p, i) => sum + haversineKm(points[i], p), 0) : null
+  const estimates = ready
+    ? c.vehicles.map((key) => ({ key, speedKmh: VEHICLES[key].maxSpeedKmh, minutes: flightMinutes(distanceKm, VEHICLES[key].maxSpeedKmh) }))
+    : []
+  // Сравниваем с ближайшим по времени расчётом: тип реактивного БпЛА в постах не указывают.
+  const closest = estimates.reduce((best, e) => (!best || Math.abs(e.minutes - realMin) < Math.abs(best.minutes - realMin) ? e : best), null)
+  const appMin = estimates.length ? Math.min(...estimates.map((e) => e.minutes)) : null
+  const appMax = estimates.length ? Math.max(...estimates.map((e) => e.minutes)) : null
+
+  return {
+    ...c,
+    date: dateFmt.format(t0),
+    realMin,
+    points: ready ? points : null,
+    distanceKm,
+    estimates,
+    closest,
+    appRange: appMin == null ? '' : appMin === appMax ? formatDuration(appMin) : `${formatDuration(appMin)} – ${formatDuration(appMax)}`,
+    events: c.events.map((e) => {
+      const at = Date.parse(e.at)
+      return {
+        ...e,
+        time: timeFmt.format(at),
+        offset: at > t0 ? `+${formatDuration((at - t0) / 60000)}` : '',
+        source: SOURCES[e.post.split('/')[0]],
+        url: `https://t.me/${e.post}`,
+        measured: e.post === c.start || e.post === c.end,
+      }
+    }),
+  }
+}
+
+const cases = computed(() => REAL_CASES.map(build))
+const openPanels = ref([REAL_CASES[0].id]) // первый (самый показательный) пример раскрыт сразу
+
+function verdict(c) {
+  const diff = formatDuration(Math.abs(c.realMin - c.closest.minutes))
+  const name = shortTitle(c.closest.key)
+  return c.realMin >= c.closest.minutes ? t('casesLonger', { diff, name }) : t('casesShorter', { diff, name })
+}
+</script>
+
+<template>
+  <v-card>
+    <v-card-item>
+      <v-card-title class="text-title-large cases-wrap">{{ t('casesTitle') }}</v-card-title>
+      <v-card-subtitle class="cases-wrap">{{ t('casesHint') }}</v-card-subtitle>
+    </v-card-item>
+
+    <v-expansion-panels v-model="openPanels" variant="accordion" multiple class="px-4">
+      <v-expansion-panel v-for="c in cases" :key="c.id" :value="c.id">
+        <v-expansion-panel-title>
+          <div class="d-flex flex-column ga-1">
+            <div class="text-title-small">{{ c.title }}</div>
+            <div class="text-body-small text-medium-emphasis">{{ c.date }} · {{ c.target }}</div>
+            <div class="d-flex flex-wrap ga-2 mt-1">
+              <v-chip size="small" variant="tonal" prepend-icon="mdi-clock-outline">
+                {{ t('casesReal') }}: {{ formatDuration(c.realMin) }}
+              </v-chip>
+              <v-chip v-if="c.appRange" size="small" variant="tonal" color="primary" prepend-icon="mdi-calculator-variant-outline">
+                {{ t('casesApp') }}: {{ c.appRange }}
+              </v-chip>
+            </div>
+          </div>
+        </v-expansion-panel-title>
+
+        <v-expansion-panel-text>
+          <ol class="case-events">
+            <li v-for="e in c.events" :key="e.post" :class="{ 'case-event--measured': e.measured }">
+              <div class="d-flex flex-wrap align-baseline ga-2">
+                <span class="font-weight-bold">{{ e.time }}</span>
+                <span v-if="e.offset" class="text-body-small text-medium-emphasis">{{ e.offset }}</span>
+                <a :href="e.url" target="_blank" rel="noopener" class="text-body-small">{{ e.source }}</a>
+              </div>
+              <div class="text-body-medium">{{ e.text }}</div>
+            </li>
+          </ol>
+
+          <v-sheet v-if="c.points" color="surface-light" rounded class="pa-3 mt-3 text-body-medium">
+            <div>
+              {{ c.points.map(placeName).join(' → ') }}: <b>{{ km(c.distanceKm) }} {{ t('kmStraight') }}</b>
+            </div>
+            <div>{{ t('casesElapsed') }}: <b>{{ formatDuration(c.realMin) }}</b></div>
+            <div v-for="e in c.estimates" :key="e.key">
+              {{ t('casesEstimate', { name: shortTitle(e.key), speed: e.speedKmh }) }}: <b>{{ formatDuration(e.minutes) }}</b>
+            </div>
+            <div class="mt-2">{{ verdict(c) }}</div>
+            <div v-if="c.note" class="mt-2 text-medium-emphasis">{{ c.note }}</div>
+          </v-sheet>
+
+          <v-btn
+            class="mt-3"
+            prepend-icon="mdi-map-marker-path"
+            variant="tonal"
+            :disabled="!c.points"
+            @click="emit('open', { points: c.points, vehicles: c.vehicles })"
+          >
+            {{ t('casesOpen') }}
+          </v-btn>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
+
+    <v-card-text class="text-body-small text-medium-emphasis">{{ t('casesMethod') }}</v-card-text>
+  </v-card>
+</template>
+
+<style scoped>
+.cases-wrap {
+  white-space: normal;
+}
+
+/* Хронология: вертикальная линия слева, посты, между которыми считаем время, — с акцентной точкой. */
+.case-events {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 18px;
+  border-left: 2px solid rgba(var(--v-theme-on-surface), 0.15);
+}
+
+.case-events li {
+  position: relative;
+  padding: 0 0 12px;
+}
+
+.case-events li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-surface));
+  border: 2px solid rgba(var(--v-theme-on-surface), 0.4);
+}
+
+.case-events li.case-event--measured::before {
+  background: rgb(var(--v-theme-primary));
+  border-color: rgb(var(--v-theme-primary));
+}
+</style>

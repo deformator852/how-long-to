@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import PlaceAutocomplete from './components/PlaceAutocomplete.vue'
 import PointBadge from './components/PointBadge.vue'
 import EstimateResult from './components/EstimateResult.vue'
+import RealCases from './components/RealCases.vue'
 import { computed, defineAsyncComponent, nextTick, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useFlightStore } from './stores/flight'
@@ -28,8 +29,20 @@ const { stops, filledStops, vehicles, customSpeedKmh, history, results } = store
 
 const mode = ref('list') // 'list' — поля с поиском пунктов, 'map' — точки кликами по карте
 // На широком экране в режиме «Список» 3D-карта стоит слева, форма и результаты — справа.
-const { lgAndUp } = useDisplay()
-const sideMap = computed(() => mode.value === 'list' && lgAndUp.value)
+// Страница «Наскільки точний застосунок» — по адресу #accuracy (ссылкой можно делиться), назад — кнопкой браузера.
+const pageFromUrl = () => (location.hash === '#accuracy' ? 'accuracy' : 'main')
+const page = ref(pageFromUrl())
+window.addEventListener('popstate', () => (page.value = pageFromUrl()))
+
+function go(to) {
+  if (page.value === to) return
+  window.history.pushState(null, '', to === 'accuracy' ? '#accuracy' : location.pathname + location.search)
+  page.value = to
+  window.scrollTo({ top: 0 })
+}
+
+const { lgAndUp, smAndUp } = useDisplay()
+const sideMap = computed(() => page.value === 'main' && mode.value === 'list' && lgAndUp.value)
 const routeMap = ref(null)
 const autofocusKey = ref(null)
 
@@ -46,6 +59,13 @@ async function restore(entry) {
   routeMap.value?.fit()
 }
 
+/** Пример со страницы точности — в форму, на главную к результату. */
+function openCase(entry) {
+  mode.value = 'list'
+  store.restore(entry)
+  go('main')
+}
+
 function routeLabel(points) {
   const names = points.map(placeName)
   return names.length <= 3 ? names.join(' → ') : `${names[0]} → … → ${names.at(-1)}`
@@ -58,10 +78,28 @@ function routeLabel(points) {
       <v-app-bar-title>
         <v-icon icon="mdi-timer-outline" class="mr-2" />{{ t('appTitle') }}
       </v-app-bar-title>
+      <template #append>
+        <v-btn
+          href="#accuracy"
+          prepend-icon="mdi-check-decagram-outline"
+          :variant="page === 'accuracy' ? 'tonal' : 'text'"
+          class="text-none"
+          @click.prevent="go('accuracy')"
+        >
+          {{ smAndUp ? t('accuracyLink') : t('accuracyLinkShort') }}
+        </v-btn>
+      </template>
     </v-app-bar>
 
     <v-main>
-      <v-container class="py-8" :class="{ 'layout-side': sideMap }" :style="{ maxWidth: sideMap ? '1600px' : '760px' }">
+      <v-container v-if="page === 'accuracy'" class="py-8" style="max-width: 760px">
+        <v-btn href="./" prepend-icon="mdi-arrow-left" variant="text" class="text-none mb-4" @click.prevent="go('main')">
+          {{ t('backToCalc') }}
+        </v-btn>
+        <RealCases @open="openCase" />
+      </v-container>
+
+      <v-container v-else class="py-8" :class="{ 'layout-side': sideMap }" :style="{ maxWidth: sideMap ? '1600px' : '760px' }">
         <aside v-if="sideMap" class="layout-side__map">
           <Route3D side />
         </aside>
