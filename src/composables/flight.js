@@ -1,5 +1,7 @@
-import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+// Состояние калькулятора: цепочка точек, выбранные аппараты, результат. Экземпляров может быть несколько
+// (главная страница и примеры на странице точности) — каждый независим. FlightCalculator отдаёт свой
+// экземпляр вниз через provide, компоненты внутри берут его через useFlight().
+import { computed, inject, provide, reactive, ref, watch } from 'vue'
 import { haversineKm } from '../utils/geo.js'
 import { VEHICLES, flightMinutes } from '../utils/flight'
 
@@ -47,12 +49,22 @@ function isEditOf(prev, next) {
 let lastStopKey = 0
 const newStop = (place = null) => ({ key: ++lastStopKey, place })
 
-export const useFlightStore = defineStore('flight', () => {
+/** В цепочке всегда минимум два слота — «Откуда» и «Куда». */
+function pad(list) {
+  while (list.length < 2) list.push(newStop())
+  return list
+}
+
+/**
+ * Новый калькулятор. points/vehicles — начальный маршрут и аппараты;
+ * persistHistory — вести «Нещодавні маршрути» в localStorage (только у калькулятора главной страницы).
+ */
+export function createFlight({ points: initialPoints = [], vehicles: initialVehicles = ['banderol'], persistHistory = false } = {}) {
   // Слоты цепочки. Пустой слот (place: null) — поле, которое ещё не заполнили.
-  const stops = ref([newStop(), newStop()])
-  const vehicles = ref(['banderol'])
+  const stops = ref(pad(initialPoints.map((p) => newStop(p))))
+  const vehicles = ref([...initialVehicles])
   const customSpeedKmh = ref(VEHICLES.custom.maxSpeedKmh)
-  const history = ref(loadHistory())
+  const history = ref(persistHistory ? loadHistory() : [])
 
   const filledStops = computed(() => stops.value.filter((s) => s.place))
   const points = computed(() => filledStops.value.map((s) => s.place))
@@ -80,12 +92,6 @@ export const useFlightStore = defineStore('flight', () => {
       .filter((r) => r.minutes != null)
       .sort((a, b) => a.minutes - b.minutes)
   })
-
-  /** В цепочке всегда минимум два слота — «Откуда» и «Куда». */
-  function pad(list) {
-    while (list.length < 2) list.push(newStop())
-    return list
-  }
 
   function addStop() {
     stops.value.push(newStop())
@@ -121,7 +127,7 @@ export const useFlightStore = defineStore('flight', () => {
   }
 
   // Маршрут до последнего изменения — чтобы отличить правку текущего маршрута от нового.
-  let prevPoints = []
+  let prevPoints = [...points.value]
 
   function restore(entry) {
     stops.value = pad(entry.points.map((p) => newStop(p)))
@@ -129,7 +135,7 @@ export const useFlightStore = defineStore('flight', () => {
     prevPoints = [] // восстановленный маршрут — не правка текущего, его запись не затираем
   }
 
-  watch(() => routeKey(points.value), () => {
+  if (persistHistory) watch(() => routeKey(points.value), () => {
     const next = [...points.value]
     const prev = prevPoints
     prevPoints = next
@@ -148,7 +154,8 @@ export const useFlightStore = defineStore('flight', () => {
     }
   })
 
-  return {
+  // reactive — поля читаются без .value (flight.points), как у стора; для деструктуризации — toRefs(flight).
+  return reactive({
     stops,
     vehicles,
     customSpeedKmh,
@@ -166,5 +173,19 @@ export const useFlightStore = defineStore('flight', () => {
     reverse,
     clear,
     restore,
-  }
-})
+  })
+}
+
+const FLIGHT = Symbol('flight')
+
+/** Сделать калькулятор доступным компонентам внутри (EstimateResult, Route3D, RouteMap). */
+export function provideFlight(flight) {
+  provide(FLIGHT, flight)
+}
+
+/** Калькулятор ближайшего FlightCalculator выше по дереву. */
+export function useFlight() {
+  const flight = inject(FLIGHT, null)
+  if (!flight) throw new Error('useFlight(): компонент должен быть внутри FlightCalculator')
+  return flight
+}

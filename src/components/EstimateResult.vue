@@ -1,13 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useFlightStore } from '../stores/flight'
+import { computed, ref, toRefs } from 'vue'
+import { useFlight } from '../composables/flight'
 import { flightMinutes, formatDuration } from '../utils/flight'
 import { placeName } from '../services/places'
 import PointBadge from './PointBadge.vue'
 import { NUMBER_LOCALE, t } from '../i18n'
 
-const { results: byTime, distanceKm, points, legsKm } = storeToRefs(useFlightStore())
+const { results: byTime, distanceKm, points, legsKm } = toRefs(useFlight())
 
 // В сторе — от быстрого к медленному; кнопкой можно развернуть порядок.
 const slowFirst = ref(false)

@@ -3,10 +3,9 @@
 // Leaflet управляет DOM сам, поэтому слои перерисовываются целиком при каждом изменении маршрута.
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import { useFlightStore } from '../stores/flight'
+import { useFlight } from '../composables/flight'
 import { loadPlaces, mapPoint, placeName, placeSubtitle } from '../services/places'
 import { haversineKm } from '../utils/geo'
 import { NUMBER_LOCALE, t } from '../i18n'
@@ -15,8 +14,8 @@ import { legColorName, pinStyle } from '../utils/routeColors'
 const UKRAINE_BOUNDS = [[44.3, 22.1], [52.4, 40.3]]
 const PIN_SIZE = 26 // px, диаметр кружка с номером точки (см. .route-pin)
 
-const store = useFlightStore()
-const { filledStops } = storeToRefs(store)
+const flight = useFlight()
+const { filledStops } = toRefs(flight)
 const theme = useTheme()
 const el = ref(null)
 
@@ -82,7 +81,7 @@ function popupContent(stop) {
   remove.textContent = t('removePoint')
   remove.addEventListener('click', () => {
     map.closePopup()
-    store.removeStop(stop.key)
+    flight.removeStop(stop.key)
   })
   box.append(title, sub, remove)
   return box
@@ -112,7 +111,7 @@ function drawPins() {
     })
     pin.on('dragend', async () => {
       const { lat, lng } = pin.getLatLng().wrap()
-      store.setPlace(stop.key, await mapPoint(lat, lng))
+      flight.setPlace(stop.key, await mapPoint(lat, lng))
     })
     pin.addTo(pinsLayer)
     Object.assign(pin.getElement().style, pinStyle(i)) // цвет точки = цвет отрезка, который в неё ведёт
@@ -145,7 +144,7 @@ onMounted(() => {
   map.on('click', async (e) => {
     if (closingClick) return
     const { lat, lng } = e.latlng.wrap()
-    store.addPoint(await mapPoint(lat, lng))
+    flight.addPoint(await mapPoint(lat, lng))
   })
 
   fit()

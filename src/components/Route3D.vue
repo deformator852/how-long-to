@@ -6,10 +6,9 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import * as maplibregl from 'maplibre-gl'
 // Воркер MapLibre сам ищет себя рядом с бандлом — после сборки Vite его там нет, поэтому указываем явно.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { onBeforeUnmount, onMounted, ref, toRefs, watch } from 'vue'
 import { useTheme } from 'vuetify'
-import { useFlightStore } from '../stores/flight'
+import { useFlight } from '../composables/flight'
 import { placeName } from '../services/places'
 import { haversineKm } from '../utils/geo'
 import { t } from '../i18n'
@@ -47,7 +46,7 @@ const MAP_LOCALE = {
   'CooperativeGesturesHandler.MobileHelpText': 'Рухайте карту двома пальцями',
 }
 
-const { points } = storeToRefs(useFlightStore())
+const { points } = toRefs(useFlight())
 const theme = useTheme()
 const el = ref(null)
 const failed = ref(false)
