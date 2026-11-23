@@ -1,5 +1,5 @@
 <script setup>
-// Страница «Наскільки точний застосунок»: хронология постов официальных каналов и расчёт приложения
+// Страница «Наскільки точний застосунок»: хронология постов мониторингового канала и расчёт приложения
 // для тех же точек — тем же кодом, что и основной расчёт (haversineKm + flightMinutes).
 // «Перевірити самому» раскрывает в примере полноценный калькулятор с этим маршрутом — отдельный экземпляр,
 // главную страницу и её историю он не трогает.
@@ -16,7 +16,7 @@ const places = ref(null) // Map id → пункт; null — справочник
 
 onMounted(async () => {
   try {
-    const ids = new Set(REAL_CASES.flatMap((c) => c.route))
+    const ids = new Set(REAL_CASES.flatMap((c) => c.events.map((e) => e.point).filter(Boolean)))
     const list = await loadPlaces()
     places.value = new Map(list.filter((p) => ids.has(p.id)).map((p) => [p.id, p]))
   } catch {
@@ -32,13 +32,16 @@ const shortTitle = (key) => t(`${key}.title`).replace(/\s*\(.*\)$/, '')
 const km = (v) => v.toLocaleString(NUMBER_LOCALE, { maximumFractionDigits: 1 })
 
 function build(c) {
-  const time = (post) => Date.parse(c.events.find((e) => e.post === post).at)
-  const t0 = time(c.start)
-  const realMin = (time(c.end) - t0) / 60000
+  // Точки маршрута — посты, где названо пройденное село; реальное время — от первой из них до последней.
+  const route = c.events.filter((e) => e.point)
+  const t0 = Date.parse(route[0].at)
+  const realMin = (Date.parse(route.at(-1).at) - t0) / 60000
 
-  const points = c.route.map((id) => places.value?.get(id))
+  const points = route.map((e) => places.value?.get(e.point))
   const ready = points.every(Boolean)
-  const distanceKm = ready ? points.slice(1).reduce((sum, p, i) => sum + haversineKm(points[i], p), 0) : null
+  let sum = 0
+  const cumKm = ready ? points.map((p, i) => (sum += i ? haversineKm(points[i - 1], p) : 0)) : null // км от старта до точки
+  const distanceKm = cumKm?.at(-1) ?? null
   const estimates = ready
     ? c.vehicles.map((key) => ({ key, speedKmh: VEHICLES[key].maxSpeedKmh, minutes: flightMinutes(distanceKm, VEHICLES[key].maxSpeedKmh) }))
     : []
@@ -58,13 +61,16 @@ function build(c) {
     appRange: appMin == null ? '' : appMin === appMax ? formatDuration(appMin) : `${formatDuration(appMin)} – ${formatDuration(appMax)}`,
     events: c.events.map((e) => {
       const at = Date.parse(e.at)
+      const i = route.indexOf(e)
       return {
         ...e,
         time: timeFmt.format(at),
         offset: at > t0 ? `+${formatDuration((at - t0) / 60000)}` : '',
         source: SOURCES[e.post.split('/')[0]],
         url: `https://t.me/${e.post}`,
-        measured: e.post === c.start || e.post === c.end,
+        measured: i >= 0,
+        // расчёт приложения до этой точки — для того же аппарата, что ближе всего по итоговому времени
+        appAt: i > 0 && closest ? formatDuration(flightMinutes(cumKm[i], closest.speedKmh)) : '',
       }
     }),
   }
@@ -124,6 +130,9 @@ function verdict(c) {
               <div class="d-flex flex-wrap align-baseline ga-2">
                 <span class="font-weight-bold">{{ e.time }}</span>
                 <span v-if="e.offset" class="text-body-small text-medium-emphasis">{{ e.offset }}</span>
+                <span v-if="e.appAt" class="text-body-small text-primary">
+                  {{ t('casesAppAt', { name: shortTitle(c.closest.key), time: e.appAt }) }}
+                </span>
                 <a :href="e.url" target="_blank" rel="noopener" class="text-body-small">{{ e.source }}</a>
               </div>
               <div class="text-body-medium">{{ e.text }}</div>
@@ -132,7 +141,8 @@ function verdict(c) {
 
           <v-sheet v-if="c.points" color="surface-light" rounded class="pa-3 mt-3 text-body-medium">
             <div>
-              {{ c.points.map(placeName).join(' → ') }}: <b>{{ km(c.distanceKm) }} {{ t('kmStraight') }}</b>
+              {{ c.points.map(placeName).join(' → ') }}:
+              <b>{{ km(c.distanceKm) }} {{ c.points.length > 2 ? t('kmRoute') : t('kmStraight') }}</b>
             </div>
             <div>{{ t('casesElapsed') }}: <b>{{ formatDuration(c.realMin) }}</b></div>
             <div v-for="e in c.estimates" :key="e.key">
