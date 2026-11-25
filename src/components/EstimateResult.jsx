@@ -41,11 +41,13 @@ export function EstimateResult({ flight }) {
             <div className="row">
               <Icon name={r.icon} />
               <span className="text-title-medium">{t(`${r.key}.title`)}</span>
-              <span className="text-body-medium text-muted">
-                {km(r.speedKmh)} {t('kmh')}
-              </span>
+              <span className="text-body-medium text-muted">{t('speedMax', { speed: km(r.speedKmh) })}</span>
             </div>
-            <div className={`text-bold ${results.length === 1 ? 'text-display-medium' : 'text-headline-large'}`}>{formatDuration(r.minutes)}</div>
+            {/* Расчёт — на макс. скорости по прямой, то есть нижняя граница: «щонайменше» прямо у числа. */}
+            <div className={`result__time text-bold ${results.length === 1 ? 'text-display-medium' : 'text-headline-large'}`}>
+              <span className="result__at-least">{t('atLeast')}</span>
+              <span className="nowrap">{formatDuration(r.minutes)}</span>
+            </div>
             {r.outOfRange && (
               <div className="text-body-small text-warning">
                 <Icon name="alert" size={16} /> {t('outOfRange', { km: km(r.rangeKm) })}

@@ -485,12 +485,6 @@ button.chip:hover,
   color: var(--muted);
 }
 
-.field:focus-within .field__label,
-.field[data-filled] .field__label,
-.field--prefixed .field__label {
-  left: 16px;
-}
-
 .field--prefixed .field__label {
   left: 52px;
 }
@@ -801,6 +795,21 @@ button.chip:hover,
 .result__item--sep {
   padding-top: 12px;
   border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+/* «щонайменше» — в строку с числом, а на узком экране — над ним, без лишнего отступа. */
+.result__time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+}
+
+.result__at-least {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 400;
+  color: var(--muted);
 }
 
 .route3d-card--below {
